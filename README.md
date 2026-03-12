@@ -14,13 +14,14 @@ Web-based Lottie animation editor. Load `.json` Lottie files, edit layers, and e
 - **Undo (Ctrl+Z)** — up to 50 undo steps
 - **Frame Boundaries** — visible canvas frame with corner markers and size label
 - **Playback Controls** — play/pause, scrubber, loop toggle
-- **Export** — download the edited animation as `.json`
+- **Export** — JSON, TGS (Telegram Sticker), SVG frame, PNG frame
 - **Drag & Drop** — drop a `.json` file onto the page to load it
 
 ## Tech Stack
 
 Pure vanilla HTML + CSS + JavaScript. No build step, no frameworks.  
-Only external dependency: [lottie-web](https://github.com/airbnb/lottie-web) via CDN.
+External dependencies (CDN): [lottie-web](https://github.com/airbnb/lottie-web), [pako](https://github.com/nodeca/pako) (gzip for TGS).  
+SVG export approach inspired by [lottie-to-svg](https://github.com/attikusfinch/lottie-to-svg).
 
 ## Getting Started
 
@@ -34,6 +35,10 @@ npx -y serve .
 ```
 
 Open `http://localhost:3000` and load a Lottie `.json` file.
+
+## Author
+
+Made by [@fiscaldev](https://github.com/fiscaldev) · [Telegram](https://t.me/fiscaldev)
 
 ## License
 

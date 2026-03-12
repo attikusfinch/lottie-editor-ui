@@ -33,10 +33,45 @@
                 Load JSON
                 <input type="file" id="file-input" accept=".json" hidden>
             </label>
-            <button id="btn-export" class="btn btn-primary" disabled>
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 10v2a2 2 0 002 2h8a2 2 0 002-2v-2M5 7l3 3 3-3M8 10V2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                Export
-            </button>
+            <!-- Export dropdown -->
+            <div class="export-dropdown" id="export-dropdown">
+                <button id="btn-export" class="btn btn-primary" disabled>
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 10v2a2 2 0 002 2h8a2 2 0 002-2v-2M5 7l3 3 3-3M8 10V2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    Export
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" class="chevron"><path d="M3 5l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+                <div class="export-menu" id="export-menu">
+                    <button class="export-menu-item" id="export-json">
+                        <span class="export-icon">{ }</span>
+                        <div>
+                            <div class="export-menu-title">JSON</div>
+                            <div class="export-menu-desc">Lottie animation file</div>
+                        </div>
+                    </button>
+                    <button class="export-menu-item" id="export-tgs">
+                        <span class="export-icon">📦</span>
+                        <div>
+                            <div class="export-menu-title">TGS</div>
+                            <div class="export-menu-desc">Telegram Sticker (gzipped)</div>
+                        </div>
+                    </button>
+                    <div class="export-menu-divider"></div>
+                    <button class="export-menu-item" id="export-svg">
+                        <span class="export-icon">◇</span>
+                        <div>
+                            <div class="export-menu-title">SVG</div>
+                            <div class="export-menu-desc">Current frame as vector</div>
+                        </div>
+                    </button>
+                    <button class="export-menu-item" id="export-png">
+                        <span class="export-icon">🖼</span>
+                        <div>
+                            <div class="export-menu-title">PNG</div>
+                            <div class="export-menu-desc">Current frame as image</div>
+                        </div>
+                    </button>
+                </div>
+            </div>
         </div>
     </header>
 
@@ -93,10 +128,20 @@
         </aside>
     </main>
 
+    <!-- Footer -->
+    <footer id="app-footer">
+        Made by <a href="https://github.com/fiscaldev" target="_blank">@fiscaldev</a>
+        <span class="footer-sep">·</span>
+        <a href="https://t.me/fiscaldev" target="_blank">Telegram</a>
+        <span class="footer-sep">·</span>
+        SVG export powered by <a href="https://github.com/attikusfinch/lottie-to-svg" target="_blank">lottie-to-svg</a>
+    </footer>
+
     <!-- Toast container -->
     <div id="toast-container"></div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
     <script src="app.js"></script>
 </body>
 </html>
