@@ -711,6 +711,16 @@
     }
 
     function selectLayer(idx) {
+        // Toggle: clicking already-selected layer deselects it
+        if (selectedLayerIndex === idx) {
+            selectedLayerIndex = null;
+            layersList.querySelectorAll('.layer-item').forEach(el => el.classList.remove('selected'));
+            lottiePlayer.style.cursor = '';
+            renderInspector();
+            updateSelectionBox();
+            return;
+        }
+
         selectedLayerIndex = idx;
         // Update selection visuals
         layersList.querySelectorAll('.layer-item').forEach((el, i) => {
@@ -855,19 +865,117 @@
     }
 
     // ═══════════════════════════════════════════
-    // Inspector Panel
+    // Global Color Palette
     // ═══════════════════════════════════════════
 
-    function renderInspector() {
-        if (selectedLayerIndex === null || !flatLayers[selectedLayerIndex]) {
+    function renderGlobalColorPalette() {
+        // Collect colors from ALL layers
+        const allColors = [];
+
+        flatLayers.forEach((entry, idx) => {
+            const layerColors = extractColors(entry.layer);
+            layerColors.forEach(c => {
+                allColors.push({
+                    ...c,
+                    layerName: entry.layer.nm || `Layer ${idx}`,
+                    layerIndex: idx,
+                });
+            });
+        });
+
+        if (allColors.length === 0) {
             inspectorContent.innerHTML = `
                 <div class="empty-state">
                     <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
                         <circle cx="24" cy="24" r="18" stroke="currentColor" stroke-width="2" opacity=".2"/>
                         <path d="M24 16v8M24 28v2" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" opacity=".3"/>
                     </svg>
-                    <p>Select a layer<br>to inspect</p>
+                    <p>No editable colors<br>found in layers</p>
                 </div>`;
+            return;
+        }
+
+        // Group by hex value
+        const colorGroups = new Map(); // hex -> { hex, entries: [{setter, layerName, label}] }
+        allColors.forEach(c => {
+            const hex = rgbToHex(c.color[0], c.color[1], c.color[2]);
+            if (!colorGroups.has(hex)) {
+                colorGroups.set(hex, { hex, entries: [] });
+            }
+            colorGroups.get(hex).entries.push(c);
+        });
+
+        const uniqueColors = Array.from(colorGroups.values());
+
+        let html = `
+            <div class="inspector-section">
+                <div class="inspector-section-title">🎨 Colors — ${uniqueColors.length} unique / ${allColors.length} total</div>`;
+
+        uniqueColors.forEach((group, gi) => {
+            const count = group.entries.length;
+            // Build tooltip with layer names
+            const layerNames = [...new Set(group.entries.map(e => e.layerName))];
+            const tooltipText = escHtml(layerNames.slice(0, 5).join(', ') + (layerNames.length > 5 ? ` +${layerNames.length - 5} more` : ''));
+
+            html += `
+                <div class="color-row" title="${tooltipText}">
+                    <div class="color-swatch-wrapper">
+                        <div class="color-swatch" style="background:${group.hex}"></div>
+                        <input type="color" class="color-swatch-input" data-group-idx="${gi}" value="${group.hex}">
+                    </div>
+                    <span class="color-hex">${group.hex}</span>
+                    <span class="color-count">${count}×</span>
+                </div>`;
+        });
+        html += '</div>';
+
+        inspectorContent.innerHTML = html;
+
+        // Bind color input events — editing one hex changes ALL entries with that value
+        inspectorContent.querySelectorAll('.color-swatch-input').forEach(inp => {
+            let snapshotSaved = false;
+            inp.addEventListener('input', (e) => {
+                if (!snapshotSaved) {
+                    saveSnapshot();
+                    snapshotSaved = true;
+                }
+                const gi = parseInt(e.target.dataset.groupIdx);
+                const group = uniqueColors[gi];
+                if (!group) return;
+                const rgb = hexToRgb(e.target.value);
+                // Apply to ALL entries in this group
+                group.entries.forEach(entry => entry.setter(rgb));
+                // Update visuals
+                const swatch = e.target.previousElementSibling;
+                if (swatch) swatch.style.background = e.target.value;
+                const hexLabel = e.target.closest('.color-row').querySelector('.color-hex');
+                if (hexLabel) hexLabel.textContent = e.target.value;
+                group.hex = e.target.value;
+                renderPreview();
+            });
+            inp.addEventListener('change', () => { snapshotSaved = false; });
+        });
+    }
+
+    // ═══════════════════════════════════════════
+    // Inspector Panel
+    // ═══════════════════════════════════════════
+
+    function renderInspector() {
+        if (selectedLayerIndex === null || !flatLayers[selectedLayerIndex]) {
+            // Show global color palette if file is loaded
+            if (lottieData && flatLayers.length > 0) {
+                renderGlobalColorPalette();
+            } else {
+                inspectorContent.innerHTML = `
+                    <div class="empty-state">
+                        <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+                            <circle cx="24" cy="24" r="18" stroke="currentColor" stroke-width="2" opacity=".2"/>
+                            <path d="M24 16v8M24 28v2" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" opacity=".3"/>
+                        </svg>
+                        <p>Select a layer<br>to inspect</p>
+                    </div>`;
+            }
             return;
         }
 
