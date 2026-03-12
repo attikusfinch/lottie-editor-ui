@@ -104,13 +104,32 @@ function setColorValue(cProp, rgb) {
     }
 }
 
+// ─── Get all layers (ignoring collapse state) ───
+function getAllLayers() {
+    const all = [];
+    if (!state.lottieData) return all;
+    function walkLayers(layers) {
+        if (!layers) return;
+        for (const layer of layers) {
+            all.push(layer);
+            if (layer.ty === 0 && layer.refId && state.lottieData.assets) {
+                const asset = state.lottieData.assets.find(a => a.id === layer.refId);
+                if (asset && asset.layers) walkLayers(asset.layers);
+            }
+        }
+    }
+    walkLayers(state.lottieData.layers);
+    return all;
+}
+
 // ─── Global Color Palette ───
 
 export function renderGlobalColorPalette() {
     const allColors = [];
-    state.flatLayers.forEach((entry, idx) => {
-        extractColors(entry.layer).forEach(c => {
-            allColors.push({ ...c, layerName: entry.layer.nm || `Layer ${idx}`, layerIndex: idx });
+    const allLayers = getAllLayers();
+    allLayers.forEach((layer, idx) => {
+        extractColors(layer).forEach(c => {
+            allColors.push({ ...c, layerName: layer.nm || `Layer ${idx}`, layerIndex: idx });
         });
     });
 
@@ -201,8 +220,9 @@ function getHueGroup(r, g, b) {
 
 export function captureOriginalColors() {
     state.originalColors = [];
-    state.flatLayers.forEach(entry => {
-        extractColors(entry.layer).forEach(c => {
+    const allLayers = getAllLayers();
+    allLayers.forEach(layer => {
+        extractColors(layer).forEach(c => {
             state.originalColors.push({
                 color: [c.color[0], c.color[1], c.color[2]],
                 setter: c.setter,
