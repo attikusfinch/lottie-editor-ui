@@ -1,7 +1,7 @@
 /* Preview rendering, playback controls, frame markers */
 
 import { state, dom } from './state.js';
-import { toast } from './utils.js';
+import { toast, saveSnapshot } from './utils.js';
 import { sanitizeLottieData } from './file.js';
 
 let updateSelectionBoxFn = null;
@@ -18,11 +18,17 @@ export function renderPreview() {
     if (!state.lottieData) {
         dom.previewEmpty.classList.remove('hidden');
         dom.playbackControls.classList.add('hidden');
+        dom.trimControls.classList.add('hidden');
         return;
     }
 
     dom.previewEmpty.classList.add('hidden');
     dom.playbackControls.classList.remove('hidden');
+    dom.trimControls.classList.remove('hidden');
+
+    // Update trim inputs
+    dom.trimIn.value = Math.floor(state.lottieData.ip || 0);
+    dom.trimOut.value = Math.floor(state.lottieData.op || 60);
 
     const w = state.lottieData.w || 512;
     const h = state.lottieData.h || 512;
@@ -166,5 +172,22 @@ export function initPlaybackControls() {
         state.isLooping = !state.isLooping;
         dom.btnLoop.classList.toggle('active', state.isLooping);
         if (state.anim) state.anim.loop = state.isLooping;
+    });
+
+    // ─── Trim ───
+    dom.btnTrimApply.addEventListener('click', () => {
+        if (!state.lottieData) return;
+        const inFrame = parseInt(dom.trimIn.value) || 0;
+        const outFrame = parseInt(dom.trimOut.value) || 0;
+        if (outFrame <= inFrame) {
+            toast('Out frame must be greater than In frame', 'error');
+            return;
+        }
+        // Save for undo
+        saveSnapshot();
+        state.lottieData.ip = inFrame;
+        state.lottieData.op = outFrame;
+        renderPreview();
+        toast(`Trimmed: ${inFrame} → ${outFrame} (${outFrame - inFrame} frames)`, 'success');
     });
 }

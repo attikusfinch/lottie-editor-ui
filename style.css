@@ -530,6 +530,64 @@ body {
     text-align: right;
     flex-shrink: 0;
 }
+/* Trim Controls */
+
+.trim-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 20px;
+    background: var(--bg-surface);
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+.trim-controls.hidden {
+    display: none;
+}
+
+.trim-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+.trim-input {
+    width: 60px;
+    padding: 4px 6px;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-size: 12px;
+    font-family: 'Inter', sans-serif;
+    font-variant-numeric: tabular-nums;
+    outline: none;
+    transition: border-color var(--duration) var(--ease);
+}
+
+.trim-input:focus {
+    border-color: var(--accent);
+}
+
+.trim-apply-btn {
+    padding: 4px 10px;
+    background: var(--accent-glow);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-sm);
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--duration) var(--ease);
+    white-space: nowrap;
+    margin-left: auto;
+}
+
+.trim-apply-btn:hover {
+    background: var(--accent);
+    color: var(--bg-primary);
+}
 
 /* ===================== INSPECTOR ===================== */
 

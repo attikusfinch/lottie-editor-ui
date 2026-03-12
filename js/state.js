@@ -56,6 +56,10 @@ export function initDom() {
     dom.exportDropdown   = document.getElementById('export-dropdown');
     dom.mergeInput       = document.getElementById('merge-input');
     dom.btnUndo          = document.getElementById('btn-undo');
+    dom.trimControls     = document.getElementById('trim-controls');
+    dom.trimIn           = document.getElementById('trim-in');
+    dom.trimOut          = document.getElementById('trim-out');
+    dom.btnTrimApply     = document.getElementById('btn-trim-apply');
 }
 
 /* Layer type constants */
