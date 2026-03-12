@@ -145,34 +145,86 @@
         e.preventDefault();
         document.body.classList.remove('drag-over');
         const file = e.dataTransfer.files[0];
-        if (file && file.name.endsWith('.json')) {
-            loadFile(file);
+        if (file && (file.name.endsWith('.json') || file.name.endsWith('.tgs'))) {
+            if (lottieData) {
+                mergeFile(file);
+            } else {
+                loadFile(file);
+            }
         } else {
-            toast('Please drop a .json Lottie file', 'error');
+            toast('Please drop a .json or .tgs Lottie file', 'error');
         }
     });
 
     function loadFile(file) {
-        const reader = new FileReader();
-        reader.onload = (ev) => {
+        readLottieFile(file, (data) => {
             try {
-                lottieData = JSON.parse(ev.target.result);
-                if (!lottieData.layers || !Array.isArray(lottieData.layers)) {
-                    throw new Error('Invalid Lottie: no layers array');
+                if (!data || typeof data !== 'object') {
+                    throw new Error('Parsed data is not a valid object');
                 }
+                lottieData = data;
+                // Ensure required fields
+                if (!lottieData.layers) lottieData.layers = [];
+                if (!Array.isArray(lottieData.layers)) {
+                    throw new Error('Invalid Lottie: layers is not an array');
+                }
+                if (!lottieData.w) lottieData.w = 512;
+                if (!lottieData.h) lottieData.h = 512;
+                if (!lottieData.fr) lottieData.fr = 30;
+                if (lottieData.ip === undefined) lottieData.ip = 0;
+                if (lottieData.op === undefined) lottieData.op = 60;
+                if (!lottieData.v) lottieData.v = '5.5.2';
+                if (!lottieData.assets) lottieData.assets = [];
+
                 fileNameLabel.textContent = file.name;
                 btnExport.disabled = false;
                 selectedLayerIndex = null;
-                undoStack.length = 0; // reset undo for new file
+                undoStack.length = 0;
                 toast(`Loaded "${file.name}"`, 'success');
                 renderPreview();
                 buildLayersList();
                 renderInspector();
             } catch (err) {
-                toast('Failed to parse JSON: ' + err.message, 'error');
+                console.error('Load error:', err);
+                toast('Failed to load: ' + err.message, 'error');
             }
-        };
-        reader.readAsText(file);
+        });
+    }
+
+    // Read .json or .tgs (gzipped) file and return parsed JSON
+    function readLottieFile(file, callback) {
+        if (file.name.endsWith('.tgs')) {
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                try {
+                    const raw = new Uint8Array(ev.target.result);
+                    let jsonStr;
+                    try {
+                        jsonStr = pako.ungzip(raw, { to: 'string' });
+                    } catch (gzipErr) {
+                        // Maybe not gzipped, try as raw text
+                        jsonStr = new TextDecoder('utf-8').decode(raw);
+                    }
+                    const parsed = JSON.parse(jsonStr);
+                    callback(parsed);
+                } catch (err) {
+                    console.error('TGS parse error:', err);
+                    toast('Failed to read TGS: ' + err.message, 'error');
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        } else {
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                try {
+                    callback(JSON.parse(ev.target.result));
+                } catch (err) {
+                    console.error('JSON parse error:', err);
+                    toast('Failed to parse JSON: ' + err.message, 'error');
+                }
+            };
+            reader.readAsText(file);
+        }
     }
 
     // ═══════════════════════════════════════════
@@ -190,15 +242,12 @@
 
     function mergeFile(file) {
         if (!lottieData) {
-            // If no base file loaded, just load it normally
             loadFile(file);
             return;
         }
 
-        const reader = new FileReader();
-        reader.onload = (ev) => {
+        readLottieFile(file, (incoming) => {
             try {
-                const incoming = JSON.parse(ev.target.result);
                 if (!incoming.layers || !Array.isArray(incoming.layers)) {
                     throw new Error('Invalid Lottie: no layers array');
                 }
@@ -211,8 +260,7 @@
             } catch (err) {
                 toast('Merge failed: ' + err.message, 'error');
             }
-        };
-        reader.readAsText(file);
+        });
     }
 
     function mergeLottie(incoming, fileName) {
@@ -288,6 +336,61 @@
     }
 
     // ═══════════════════════════════════════════
+    // Data Sanitizer for lottie-web
+    // ═══════════════════════════════════════════
+
+    function sanitizeLottieData(data) {
+        // Remove non-standard top-level keys
+        delete data.tgs;
+
+        // Ensure required top-level fields
+        if (!data.v) data.v = '5.5.2';
+        if (!data.fr) data.fr = 30;
+        if (data.ip === undefined) data.ip = 0;
+        if (data.op === undefined) data.op = 60;
+        if (!data.w) data.w = 512;
+        if (!data.h) data.h = 512;
+        if (!data.assets) data.assets = [];
+        if (!data.layers) data.layers = [];
+
+        // Sanitize all layers (top-level and inside assets)
+        sanitizeLayers(data.layers);
+        for (const asset of data.assets) {
+            if (asset.layers) sanitizeLayers(asset.layers);
+        }
+    }
+
+    function sanitizeLayers(layers) {
+        for (const layer of layers) {
+            // Ensure name
+            if (!layer.nm) layer.nm = 'Layer ' + (layer.ind !== undefined ? layer.ind : '?');
+
+            // Shape layers (ty:4) MUST have shapes array
+            if (layer.ty === 4 && !layer.shapes) {
+                layer.shapes = [];
+            }
+
+            // Precomp layers (ty:0) need refId
+            // Image layers (ty:2) need refId
+
+            // Ensure transform object
+            if (!layer.ks) {
+                layer.ks = {
+                    o: { a: 0, k: 100 },
+                    r: { a: 0, k: 0 },
+                    p: { a: 0, k: [0, 0, 0] },
+                    a: { a: 0, k: [0, 0, 0] },
+                    s: { a: 0, k: [100, 100, 100] }
+                };
+            }
+
+            // Ensure ip/op
+            if (layer.ip === undefined) layer.ip = 0;
+            if (layer.op === undefined) layer.op = 99999;
+        }
+    }
+
+    // ═══════════════════════════════════════════
     // Preview Rendering
     // ═══════════════════════════════════════════
 
@@ -319,18 +422,28 @@
         // Frame boundary helpers
         updateFrameBoundaryMarkers(w, h);
 
-        anim = lottie.loadAnimation({
-            container: lottiePlayer,
-            renderer: 'svg',
-            loop: isLooping,
-            autoplay: true,
-            animationData: JSON.parse(JSON.stringify(lottieData)), // deep clone
-        });
+        // Deep clone and sanitize for lottie-web
+        const animData = JSON.parse(JSON.stringify(lottieData));
+        sanitizeLottieData(animData);
+
+        try {
+            anim = lottie.loadAnimation({
+                container: lottiePlayer,
+                renderer: 'svg',
+                loop: isLooping,
+                autoplay: true,
+                animationData: animData,
+            });
+        } catch (err) {
+            console.error('lottie.loadAnimation error:', err);
+            toast('Lottie render error: ' + err.message, 'error');
+            return;
+        }
 
         isPlaying = true;
         updatePlayPauseIcon();
 
-        const totalFrames = anim.totalFrames;
+        const totalFrames = anim.totalFrames || 0;
         scrubber.max = Math.floor(totalFrames);
 
         anim.addEventListener('enterFrame', () => {
@@ -462,17 +575,25 @@
         anim.destroy();
         lottiePlayer.innerHTML = '';
 
-        anim = lottie.loadAnimation({
-            container: lottiePlayer,
-            renderer: 'svg',
-            loop: isLooping,
-            autoplay: false,
-            animationData: JSON.parse(JSON.stringify(lottieData)),
-        });
+        const animData = JSON.parse(JSON.stringify(lottieData));
+        sanitizeLottieData(animData);
+
+        try {
+            anim = lottie.loadAnimation({
+                container: lottiePlayer,
+                renderer: 'svg',
+                loop: isLooping,
+                autoplay: false,
+                animationData: animData,
+            });
+        } catch (err) {
+            console.error('lottie silent render error:', err);
+            return;
+        }
 
         anim.goToAndStop(currentFrame, true);
 
-        const totalFrames = anim.totalFrames;
+        const totalFrames = anim.totalFrames || 0;
         anim.addEventListener('enterFrame', () => {
             const cf = Math.floor(anim.currentFrame);
             scrubber.value = cf;
