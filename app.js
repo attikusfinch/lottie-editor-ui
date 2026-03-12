@@ -26,6 +26,9 @@
     let dragLayerEntry = null;
     let previewScale = 1; // ratio: screen px → lottie units
 
+    // ─── Selection box ───
+    let selectionBox = null; // overlay div for selected layer bounding box
+
     // ─── DOM refs ───
     const fileInput       = document.getElementById('file-input');
     const btnExport       = document.getElementById('btn-export');
@@ -222,7 +225,11 @@
             const cf = Math.floor(anim.currentFrame);
             scrubber.value = cf;
             frameLabel.textContent = `${cf} / ${Math.floor(totalFrames)}`;
+            updateSelectionBox();
         });
+
+        // Update selection box after render
+        requestAnimationFrame(() => updateSelectionBox());
     }
 
     // ═══════════════════════════════════════════
@@ -477,12 +484,95 @@
             el.classList.toggle('selected', i === idx);
         });
         renderInspector();
+        updateSelectionBox();
         // Change cursor to grab when a layer is selected
         if (flatLayers[idx] && flatLayers[idx].layer.ks && flatLayers[idx].layer.ks.p) {
             lottiePlayer.style.cursor = 'grab';
         } else {
             lottiePlayer.style.cursor = '';
         }
+    }
+
+    // ═══════════════════════════════════════════
+    // Selection Bounding Box
+    // ═══════════════════════════════════════════
+
+    function ensureSelectionBox() {
+        if (!selectionBox) {
+            selectionBox = document.createElement('div');
+            selectionBox.className = 'selection-box';
+            selectionBox.innerHTML = '<div class="sel-corner tl"></div><div class="sel-corner tr"></div><div class="sel-corner bl"></div><div class="sel-corner br"></div>';
+            previewContainer.appendChild(selectionBox);
+        }
+        return selectionBox;
+    }
+
+    function updateSelectionBox() {
+        const box = ensureSelectionBox();
+
+        if (selectedLayerIndex === null || !anim || !flatLayers[selectedLayerIndex]) {
+            box.style.display = 'none';
+            return;
+        }
+
+        const entry = flatLayers[selectedLayerIndex];
+        const svgGroup = findRenderedLayerElement(entry);
+
+        if (!svgGroup) {
+            box.style.display = 'none';
+            return;
+        }
+
+        try {
+            const groupRect = svgGroup.getBoundingClientRect();
+            const containerRect = previewContainer.getBoundingClientRect();
+
+            // Skip if the element has no visible area
+            if (groupRect.width < 1 && groupRect.height < 1) {
+                box.style.display = 'none';
+                return;
+            }
+
+            const x = groupRect.left - containerRect.left;
+            const y = groupRect.top - containerRect.top;
+
+            box.style.display = 'block';
+            box.style.left = x + 'px';
+            box.style.top = y + 'px';
+            box.style.width = groupRect.width + 'px';
+            box.style.height = groupRect.height + 'px';
+        } catch (e) {
+            box.style.display = 'none';
+        }
+    }
+
+    function findRenderedLayerElement(entry) {
+        if (!anim || !anim.renderer || !anim.renderer.elements) return null;
+
+        const { layer, path } = entry;
+
+        // For top-level layers, match by index in the layers array
+        if (path[0] !== 'asset') {
+            const layerArrayIndex = path[path.length - 1];
+            const el = anim.renderer.elements[layerArrayIndex];
+            if (el) {
+                return el.baseElement || el.layerElement || null;
+            }
+        } else {
+            // For precomp children, try to find by layer ind
+            for (const el of anim.renderer.elements) {
+                if (el && el.elements) {
+                    // This is a precomp, look inside
+                    const childIdx = path[path.length - 1];
+                    const child = el.elements[childIdx];
+                    if (child) {
+                        return child.baseElement || child.layerElement || null;
+                    }
+                }
+            }
+        }
+
+        return null;
     }
 
     // ═══════════════════════════════════════════

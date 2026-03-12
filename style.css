@@ -810,6 +810,32 @@ body.drag-over .preview-container {
     color: var(--border);
 }
 
+/* ===================== SELECTION BOX ===================== */
+
+.selection-box {
+    position: absolute;
+    pointer-events: none;
+    border: 1.5px dashed rgba(124, 58, 237, 0.8);
+    background: rgba(124, 58, 237, 0.04);
+    z-index: 15;
+    transition: opacity 0.15s var(--ease);
+}
+
+.sel-corner {
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    background: var(--accent);
+    border: 1.5px solid rgba(255, 255, 255, 0.9);
+    border-radius: 2px;
+    box-shadow: 0 0 6px rgba(124, 58, 237, 0.5);
+}
+
+.sel-corner.tl { top: -4px; left: -4px; }
+.sel-corner.tr { top: -4px; right: -4px; }
+.sel-corner.bl { bottom: -4px; left: -4px; }
+.sel-corner.br { bottom: -4px; right: -4px; }
+
 /* ===================== HIDDEN UTILITY ===================== */
 
 .hidden {
