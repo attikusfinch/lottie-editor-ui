@@ -909,6 +909,32 @@
         return [r, g, b];
     }
 
+    const HUE_GROUPS = [
+        { key: 'reds',    label: '🔴 Reds',    from: 345, to: 15 },
+        { key: 'oranges', label: '🟠 Oranges', from: 15,  to: 45 },
+        { key: 'yellows', label: '🟡 Yellows', from: 45,  to: 75 },
+        { key: 'greens',  label: '🟢 Greens',  from: 75,  to: 165 },
+        { key: 'cyans',   label: '🩵 Cyans',   from: 165, to: 195 },
+        { key: 'blues',   label: '🔵 Blues',    from: 195, to: 255 },
+        { key: 'purples', label: '🟣 Purples', from: 255, to: 345 },
+    ];
+    const NEUTRAL_KEY = 'neutrals';
+    let savedGroupAdjust = {}; // { groupKey: {hue,sat,light} }
+
+    function getHueGroup(r, g, b) {
+        const [h, s] = rgbToHsl(r, g, b);
+        if (s < 0.08) return NEUTRAL_KEY;
+        const deg = h * 360;
+        for (const grp of HUE_GROUPS) {
+            if (grp.from > grp.to) { // wraps around (reds)
+                if (deg >= grp.from || deg < grp.to) return grp.key;
+            } else {
+                if (deg >= grp.from && deg < grp.to) return grp.key;
+            }
+        }
+        return NEUTRAL_KEY;
+    }
+
     function captureOriginalColors() {
         originalColors = [];
         flatLayers.forEach(entry => {
@@ -917,22 +943,36 @@
                 originalColors.push({
                     color: [c.color[0], c.color[1], c.color[2]],
                     setter: c.setter,
+                    group: getHueGroup(c.color[0], c.color[1], c.color[2]),
                 });
             });
         });
     }
 
-    function applyHslAdjust(hueShift, satShift, lightShift) {
+    function applyAllAdjustments() {
         if (!originalColors) return;
+        const globalH = savedAdjust.hue, globalS = savedAdjust.sat, globalL = savedAdjust.light;
         originalColors.forEach(oc => {
+            const ga = savedGroupAdjust[oc.group] || { hue: 0, sat: 0, light: 0 };
+            const totalH = globalH + ga.hue;
+            const totalS = globalS + ga.sat;
+            const totalL = globalL + ga.light;
             const [h, s, l] = rgbToHsl(oc.color[0], oc.color[1], oc.color[2]);
-            let newH = (h + hueShift / 360) % 1;
+            let newH = (h + totalH / 360) % 1;
             if (newH < 0) newH += 1;
-            let newS = Math.max(0, Math.min(1, s + satShift / 100));
-            let newL = Math.max(0, Math.min(1, l + lightShift / 100));
+            let newS = Math.max(0, Math.min(1, s + totalS / 100));
+            let newL = Math.max(0, Math.min(1, l + totalL / 100));
             const [r, g, b] = hslToRgb(newH, newS, newL);
             oc.setter([r, g, b]);
         });
+    }
+
+    // Keep old function signature for compatibility
+    function applyHslAdjust(hueShift, satShift, lightShift) {
+        savedAdjust.hue = hueShift;
+        savedAdjust.sat = satShift;
+        savedAdjust.light = lightShift;
+        applyAllAdjustments();
     }
 
     function renderAdjustPanel() {
@@ -942,32 +982,72 @@
             return;
         }
 
-        // Only re-capture if we don't have a snapshot yet
         if (!originalColors) captureOriginalColors();
 
-        inspectorContent.innerHTML = `
+        // Find which groups have colors
+        const groupCounts = {};
+        originalColors.forEach(oc => {
+            groupCounts[oc.group] = (groupCounts[oc.group] || 0) + 1;
+        });
+
+        const activeGroups = HUE_GROUPS.filter(g => groupCounts[g.key]);
+        if (groupCounts[NEUTRAL_KEY]) {
+            activeGroups.push({ key: NEUTRAL_KEY, label: '⚪ Neutrals' });
+        }
+
+        // Build HTML
+        let html = `
             <div class="inspector-section">
-                <div class="inspector-section-title">HSL Adjustment</div>
+                <div class="inspector-section-title">🌈 Global</div>
                 <div class="adjust-section">
                     <div class="adjust-row">
-                        <span class="adjust-label">Hue</span>
+                        <span class="adjust-label">H</span>
                         <input type="range" class="adjust-slider" id="adj-hue" min="-180" max="180" value="${savedAdjust.hue}" step="1">
                         <span class="adjust-value" id="adj-hue-val">${savedAdjust.hue}°</span>
                     </div>
                     <div class="adjust-row">
-                        <span class="adjust-label">Saturation</span>
+                        <span class="adjust-label">S</span>
                         <input type="range" class="adjust-slider" id="adj-sat" min="-100" max="100" value="${savedAdjust.sat}" step="1">
                         <span class="adjust-value" id="adj-sat-val">${savedAdjust.sat}%</span>
                     </div>
                     <div class="adjust-row">
-                        <span class="adjust-label">Lightness</span>
+                        <span class="adjust-label">L</span>
                         <input type="range" class="adjust-slider" id="adj-light" min="-100" max="100" value="${savedAdjust.light}" step="1">
                         <span class="adjust-value" id="adj-light-val">${savedAdjust.light}%</span>
                     </div>
-                    <button class="adjust-reset-btn" id="adj-reset">Reset Adjustments</button>
+                    <button class="adjust-reset-btn" id="adj-reset">Reset All</button>
                 </div>
             </div>`;
 
+        activeGroups.forEach(grp => {
+            const ga = savedGroupAdjust[grp.key] || { hue: 0, sat: 0, light: 0 };
+            const cnt = groupCounts[grp.key] || 0;
+            html += `
+            <div class="inspector-section">
+                <div class="inspector-section-title">${grp.label} <span class="color-count" style="margin-left:4px">${cnt}×</span></div>
+                <div class="adjust-section">
+                    <div class="adjust-row">
+                        <span class="adjust-label">H</span>
+                        <input type="range" class="adjust-slider group-slider" data-group="${grp.key}" data-axis="hue" min="-180" max="180" value="${ga.hue}" step="1">
+                        <span class="adjust-value">${ga.hue}°</span>
+                    </div>
+                    <div class="adjust-row">
+                        <span class="adjust-label">S</span>
+                        <input type="range" class="adjust-slider group-slider" data-group="${grp.key}" data-axis="sat" min="-100" max="100" value="${ga.sat}" step="1">
+                        <span class="adjust-value">${ga.sat}%</span>
+                    </div>
+                    <div class="adjust-row">
+                        <span class="adjust-label">L</span>
+                        <input type="range" class="adjust-slider group-slider" data-group="${grp.key}" data-axis="light" min="-100" max="100" value="${ga.light}" step="1">
+                        <span class="adjust-value">${ga.light}%</span>
+                    </div>
+                </div>
+            </div>`;
+        });
+
+        inspectorContent.innerHTML = html;
+
+        // Bind global sliders
         const hueSlider = document.getElementById('adj-hue');
         const satSlider = document.getElementById('adj-sat');
         const lightSlider = document.getElementById('adj-light');
@@ -978,36 +1058,50 @@
 
         let snapshotSaved = false;
 
-        function onAdjust() {
-            if (!snapshotSaved) {
-                saveSnapshot();
-                snapshotSaved = true;
-            }
-            const h = parseInt(hueSlider.value);
-            const s = parseInt(satSlider.value);
-            const l = parseInt(lightSlider.value);
-            savedAdjust.hue = h;
-            savedAdjust.sat = s;
-            savedAdjust.light = l;
-            hueVal.textContent = h + '°';
-            satVal.textContent = s + '%';
-            lightVal.textContent = l + '%';
-            applyHslAdjust(h, s, l);
+        function doAdjust() {
+            if (!snapshotSaved) { saveSnapshot(); snapshotSaved = true; }
+            savedAdjust.hue = parseInt(hueSlider.value);
+            savedAdjust.sat = parseInt(satSlider.value);
+            savedAdjust.light = parseInt(lightSlider.value);
+            hueVal.textContent = savedAdjust.hue + '°';
+            satVal.textContent = savedAdjust.sat + '%';
+            lightVal.textContent = savedAdjust.light + '%';
+            applyAllAdjustments();
             renderPreview();
         }
 
-        hueSlider.addEventListener('input', onAdjust);
-        satSlider.addEventListener('input', onAdjust);
-        lightSlider.addEventListener('input', onAdjust);
+        hueSlider.addEventListener('input', doAdjust);
+        satSlider.addEventListener('input', doAdjust);
+        lightSlider.addEventListener('input', doAdjust);
 
         resetBtn.addEventListener('click', () => {
-            hueSlider.value = 0;
-            satSlider.value = 0;
-            lightSlider.value = 0;
+            hueSlider.value = 0; satSlider.value = 0; lightSlider.value = 0;
             savedAdjust = { hue: 0, sat: 0, light: 0 };
+            savedGroupAdjust = {};
             snapshotSaved = false;
             captureOriginalColors();
-            onAdjust();
+            // Reset per-group sliders visually
+            inspectorContent.querySelectorAll('.group-slider').forEach(sl => {
+                sl.value = 0;
+                const valSpan = sl.nextElementSibling;
+                if (valSpan) valSpan.textContent = sl.dataset.axis === 'hue' ? '0°' : '0%';
+            });
+            doAdjust();
+        });
+
+        // Bind per-group sliders
+        inspectorContent.querySelectorAll('.group-slider').forEach(sl => {
+            sl.addEventListener('input', () => {
+                if (!snapshotSaved) { saveSnapshot(); snapshotSaved = true; }
+                const grpKey = sl.dataset.group;
+                const axis = sl.dataset.axis;
+                if (!savedGroupAdjust[grpKey]) savedGroupAdjust[grpKey] = { hue: 0, sat: 0, light: 0 };
+                savedGroupAdjust[grpKey][axis] = parseInt(sl.value);
+                const valSpan = sl.nextElementSibling;
+                if (valSpan) valSpan.textContent = sl.value + (axis === 'hue' ? '°' : '%');
+                applyAllAdjustments();
+                renderPreview();
+            });
         });
     }
 
