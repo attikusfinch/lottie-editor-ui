@@ -845,6 +845,107 @@ body.drag-over .preview-container {
 .sel-corner.bl { bottom: -4px; left: -4px; }
 .sel-corner.br { bottom: -4px; right: -4px; }
 
+/* ===================== INSPECTOR TABS ===================== */
+
+.inspector-tabs {
+    display: flex;
+    gap: 0;
+    padding: 0 !important;
+    border-bottom: 1px solid var(--border);
+}
+
+.inspector-tab {
+    flex: 1;
+    background: none;
+    border: none;
+    padding: 10px 6px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all var(--duration) var(--ease);
+    font-family: inherit;
+}
+
+.inspector-tab:hover {
+    color: var(--text-secondary);
+    background: var(--bg-elevated);
+}
+
+.inspector-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+}
+
+/* ===================== HSL ADJUST ===================== */
+
+.adjust-section {
+    padding: 4px 0;
+}
+
+.adjust-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.adjust-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    min-width: 70px;
+}
+
+.adjust-slider {
+    flex: 1;
+    -webkit-appearance: none;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--bg-input);
+    outline: none;
+}
+
+.adjust-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid var(--bg-elevated);
+    cursor: pointer;
+    box-shadow: 0 0 4px rgba(124, 58, 237, 0.4);
+}
+
+.adjust-value {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    min-width: 34px;
+    text-align: right;
+}
+
+.adjust-reset-btn {
+    width: 100%;
+    padding: 8px;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all var(--duration) var(--ease);
+    font-family: inherit;
+    margin-top: 6px;
+}
+
+.adjust-reset-btn:hover {
+    background: var(--accent-glow);
+    color: var(--accent);
+    border-color: var(--accent);
+}
+
 /* ===================== GLOBAL COLOR PALETTE ===================== */
 
 .global-color-group {

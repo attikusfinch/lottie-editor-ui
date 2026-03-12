@@ -29,6 +29,10 @@
     // ─── Selection box ───
     let selectionBox = null; // overlay div for selected layer bounding box
 
+    // ─── Tabs ───
+    let currentTab = 'colors'; // 'colors' | 'adjust' | 'inspector'
+    let originalColors = null; // snapshot for non-destructive HSL adjust
+
     // ─── DOM refs ───
     const fileInput       = document.getElementById('file-input');
     const btnExport       = document.getElementById('btn-export');
@@ -716,12 +720,18 @@
             selectedLayerIndex = null;
             layersList.querySelectorAll('.layer-item').forEach(el => el.classList.remove('selected'));
             lottiePlayer.style.cursor = '';
-            renderInspector();
+            // Switch to colors tab
+            currentTab = 'colors';
+            document.querySelectorAll('.inspector-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === 'colors'));
+            renderActiveTab();
             updateSelectionBox();
             return;
         }
 
         selectedLayerIndex = idx;
+        // Switch to inspector tab
+        currentTab = 'inspector';
+        document.querySelectorAll('.inspector-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === 'inspector'));
         // Update selection visuals
         layersList.querySelectorAll('.layer-item').forEach((el, i) => {
             el.classList.toggle('selected', i === idx);
@@ -819,8 +829,182 @@
     }
 
     // ═══════════════════════════════════════════
-    // Delete Layer
+    // Inspector Tabs
     // ═══════════════════════════════════════════
+
+    document.querySelectorAll('.inspector-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            currentTab = tab.dataset.tab;
+            document.querySelectorAll('.inspector-tab').forEach(t => t.classList.toggle('active', t === tab));
+            renderActiveTab();
+        });
+    });
+
+    function renderActiveTab() {
+        if (!lottieData) {
+            inspectorContent.innerHTML = `
+                <div class="empty-state">
+                    <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+                        <circle cx="24" cy="24" r="18" stroke="currentColor" stroke-width="2" opacity=".2"/>
+                        <path d="M24 16v8M24 28v2" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" opacity=".3"/>
+                    </svg>
+                    <p>Load a file to begin</p>
+                </div>`;
+            return;
+        }
+
+        switch (currentTab) {
+            case 'colors':
+                selectedLayerIndex = null;
+                layersList.querySelectorAll('.layer-item').forEach(el => el.classList.remove('selected'));
+                updateSelectionBox();
+                renderGlobalColorPalette();
+                break;
+            case 'adjust':
+                renderAdjustPanel();
+                break;
+            case 'inspector':
+                renderInspector();
+                break;
+        }
+    }
+
+    // ═══════════════════════════════════════════
+    // HSL Adjust Panel
+    // ═══════════════════════════════════════════
+
+    function rgbToHsl(r, g, b) {
+        const max = Math.max(r, g, b), min = Math.min(r, g, b);
+        let h = 0, s = 0, l = (max + min) / 2;
+        if (max !== min) {
+            const d = max - min;
+            s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+            if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+            else if (max === g) h = ((b - r) / d + 2) / 6;
+            else h = ((r - g) / d + 4) / 6;
+        }
+        return [h, s, l];
+    }
+
+    function hslToRgb(h, s, l) {
+        let r, g, b;
+        if (s === 0) {
+            r = g = b = l;
+        } else {
+            const hue2rgb = (p, q, t) => {
+                if (t < 0) t += 1;
+                if (t > 1) t -= 1;
+                if (t < 1/6) return p + (q - p) * 6 * t;
+                if (t < 1/2) return q;
+                if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+                return p;
+            };
+            const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+            const p = 2 * l - q;
+            r = hue2rgb(p, q, h + 1/3);
+            g = hue2rgb(p, q, h);
+            b = hue2rgb(p, q, h - 1/3);
+        }
+        return [r, g, b];
+    }
+
+    function captureOriginalColors() {
+        originalColors = [];
+        flatLayers.forEach(entry => {
+            const layerColors = extractColors(entry.layer);
+            layerColors.forEach(c => {
+                originalColors.push({
+                    color: [c.color[0], c.color[1], c.color[2]],
+                    setter: c.setter,
+                });
+            });
+        });
+    }
+
+    function applyHslAdjust(hueShift, satShift, lightShift) {
+        if (!originalColors) return;
+        originalColors.forEach(oc => {
+            const [h, s, l] = rgbToHsl(oc.color[0], oc.color[1], oc.color[2]);
+            let newH = (h + hueShift / 360) % 1;
+            if (newH < 0) newH += 1;
+            let newS = Math.max(0, Math.min(1, s + satShift / 100));
+            let newL = Math.max(0, Math.min(1, l + lightShift / 100));
+            const [r, g, b] = hslToRgb(newH, newS, newL);
+            oc.setter([r, g, b]);
+        });
+    }
+
+    function renderAdjustPanel() {
+        if (!lottieData || flatLayers.length === 0) {
+            inspectorContent.innerHTML = `
+                <div class="empty-state"><p>Load a file first</p></div>`;
+            return;
+        }
+
+        // Capture original colors when entering adjust tab
+        captureOriginalColors();
+
+        inspectorContent.innerHTML = `
+            <div class="inspector-section">
+                <div class="inspector-section-title">HSL Adjustment</div>
+                <div class="adjust-section">
+                    <div class="adjust-row">
+                        <span class="adjust-label">Hue</span>
+                        <input type="range" class="adjust-slider" id="adj-hue" min="-180" max="180" value="0" step="1">
+                        <span class="adjust-value" id="adj-hue-val">0°</span>
+                    </div>
+                    <div class="adjust-row">
+                        <span class="adjust-label">Saturation</span>
+                        <input type="range" class="adjust-slider" id="adj-sat" min="-100" max="100" value="0" step="1">
+                        <span class="adjust-value" id="adj-sat-val">0%</span>
+                    </div>
+                    <div class="adjust-row">
+                        <span class="adjust-label">Lightness</span>
+                        <input type="range" class="adjust-slider" id="adj-light" min="-100" max="100" value="0" step="1">
+                        <span class="adjust-value" id="adj-light-val">0%</span>
+                    </div>
+                    <button class="adjust-reset-btn" id="adj-reset">Reset Adjustments</button>
+                </div>
+            </div>`;
+
+        const hueSlider = document.getElementById('adj-hue');
+        const satSlider = document.getElementById('adj-sat');
+        const lightSlider = document.getElementById('adj-light');
+        const hueVal = document.getElementById('adj-hue-val');
+        const satVal = document.getElementById('adj-sat-val');
+        const lightVal = document.getElementById('adj-light-val');
+        const resetBtn = document.getElementById('adj-reset');
+
+        let snapshotSaved = false;
+
+        function onAdjust() {
+            if (!snapshotSaved) {
+                saveSnapshot();
+                snapshotSaved = true;
+            }
+            const h = parseInt(hueSlider.value);
+            const s = parseInt(satSlider.value);
+            const l = parseInt(lightSlider.value);
+            hueVal.textContent = h + '°';
+            satVal.textContent = s + '%';
+            lightVal.textContent = l + '%';
+            applyHslAdjust(h, s, l);
+            renderPreview();
+        }
+
+        hueSlider.addEventListener('input', onAdjust);
+        satSlider.addEventListener('input', onAdjust);
+        lightSlider.addEventListener('input', onAdjust);
+
+        resetBtn.addEventListener('click', () => {
+            hueSlider.value = 0;
+            satSlider.value = 0;
+            lightSlider.value = 0;
+            snapshotSaved = false;
+            captureOriginalColors(); // re-snapshot current state as new base
+            onAdjust();
+        });
+    }
 
     function deleteLayer(idx) {
         const entry = flatLayers[idx];
@@ -962,20 +1146,21 @@
     // ═══════════════════════════════════════════
 
     function renderInspector() {
+        // If we're not on inspector tab, redirect to the active tab
+        if (currentTab !== 'inspector') {
+            renderActiveTab();
+            return;
+        }
+
         if (selectedLayerIndex === null || !flatLayers[selectedLayerIndex]) {
-            // Show global color palette if file is loaded
-            if (lottieData && flatLayers.length > 0) {
-                renderGlobalColorPalette();
-            } else {
-                inspectorContent.innerHTML = `
-                    <div class="empty-state">
-                        <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
-                            <circle cx="24" cy="24" r="18" stroke="currentColor" stroke-width="2" opacity=".2"/>
-                            <path d="M24 16v8M24 28v2" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" opacity=".3"/>
-                        </svg>
-                        <p>Select a layer<br>to inspect</p>
-                    </div>`;
-            }
+            inspectorContent.innerHTML = `
+                <div class="empty-state">
+                    <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+                        <circle cx="24" cy="24" r="18" stroke="currentColor" stroke-width="2" opacity=".2"/>
+                        <path d="M24 16v8M24 28v2" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" opacity=".3"/>
+                    </svg>
+                    <p>Select a layer<br>to inspect</p>
+                </div>`;
             return;
         }
 
@@ -1248,7 +1433,7 @@
             for (const shape of shapes) {
                 // Group
                 if (shape.ty === 'gr' && shape.it) {
-                    walkShapes(shape.it, prefix + (shape.nm ? shape.nm + ' → ' : ''));
+                    walkShapes(shape.it, prefix + (shape.nm ? shape.nm + ' > ' : ''));
                 }
                 // Fill
                 if (shape.ty === 'fl' && shape.c) {
@@ -1272,20 +1457,11 @@
                         });
                     }
                 }
-                // Gradient fill
-                if (shape.ty === 'gf' && shape.g && shape.g.k) {
-                    const gk = shape.g.k;
-                    const data = gk.a === 1 ? (gk.k[0]?.s || gk.k) : gk.k;
-                    if (Array.isArray(data) && data.length >= 4) {
-                        colors.push({
-                            label: prefix + (shape.nm || 'Gradient') + ' (stop 1)',
-                            color: [data[1], data[2], data[3]],
-                            setter: (rgb) => {
-                                const arr = gk.a === 1 ? (gk.k[0]?.s || gk.k) : gk.k;
-                                arr[1] = rgb[0]; arr[2] = rgb[1]; arr[3] = rgb[2];
-                            },
-                        });
-                    }
+                // Gradient fill & gradient stroke — ALL color stops
+                if ((shape.ty === 'gf' || shape.ty === 'gs') && shape.g && shape.g.k) {
+                    const gType = shape.ty === 'gf' ? 'GFill' : 'GStroke';
+                    const numStops = shape.g.p || 0;
+                    extractGradientStops(shape.g.k, numStops, prefix + (shape.nm || gType), colors);
                 }
             }
         }
@@ -1308,7 +1484,61 @@
             }
         }
 
+        // Effects with color values
+        if (layer.ef && Array.isArray(layer.ef)) {
+            walkEffects(layer.ef, '', colors);
+        }
+
         return colors;
+    }
+
+    function extractGradientStops(gk, numStops, labelPrefix, colors) {
+        let data;
+        if (gk.a === 1 && Array.isArray(gk.k) && gk.k.length > 0) {
+            data = gk.k[0].s || gk.k[0].e || gk.k;
+        } else {
+            data = gk.k;
+        }
+        if (!Array.isArray(data)) return;
+        const stopCount = numStops || Math.floor(data.length / 4);
+        for (let i = 0; i < stopCount; i++) {
+            const base = i * 4;
+            if (base + 3 >= data.length) break;
+            const stopIdx = i;
+            colors.push({
+                label: labelPrefix + ' #' + (i + 1),
+                color: [data[base + 1], data[base + 2], data[base + 3]],
+                setter: ((idx) => (rgb) => {
+                    let arr;
+                    if (gk.a === 1 && Array.isArray(gk.k) && gk.k.length > 0) {
+                        arr = gk.k[0].s || gk.k[0].e || gk.k;
+                    } else {
+                        arr = gk.k;
+                    }
+                    const b = idx * 4;
+                    arr[b + 1] = rgb[0]; arr[b + 2] = rgb[1]; arr[b + 3] = rgb[2];
+                })(stopIdx),
+            });
+        }
+    }
+
+    function walkEffects(effects, prefix, colors) {
+        for (const ef of effects) {
+            const efName = prefix + (ef.nm || 'Effect') + ' > ';
+            if (ef.v && ef.v.k) {
+                const val = getColorValue(ef.v);
+                if (val) {
+                    colors.push({
+                        label: efName + 'Color',
+                        color: val,
+                        setter: (rgb) => setColorValue(ef.v, rgb),
+                    });
+                }
+            }
+            if (ef.ef && Array.isArray(ef.ef)) {
+                walkEffects(ef.ef, efName, colors);
+            }
+        }
     }
 
     function getColorValue(cProp) {
