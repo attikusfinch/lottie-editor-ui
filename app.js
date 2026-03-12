@@ -8,7 +8,7 @@
     // ─── State ───
     let lottieData = null;         // parsed JSON
     let anim = null;               // lottie-web animation instance
-    let selectedLayerIndex = null;  // index in flat layer list
+    let selectedLayerIndices = new Set();  // indices in flat layer list (multi-select)
     let flatLayers = [];           // [{layer, path, parent}]
     let isPlaying = true;
     let isLooping = true;
@@ -24,6 +24,7 @@
     let dragStartLayerX = 0;
     let dragStartLayerY = 0;
     let dragLayerEntry = null;
+    let dragEntries = []; // for multi-drag: [{entry, startX, startY}]
     let previewScale = 1; // ratio: screen px → lottie units
 
     // ─── Selection box ───
@@ -97,7 +98,7 @@
         lottieData = JSON.parse(snap);
 
         // Rebuild everything
-        selectedLayerIndex = null;
+        selectedLayerIndices.clear();
         renderPreview();
         buildLayersList();
         renderInspector();
@@ -183,7 +184,7 @@
 
                 fileNameLabel.textContent = file.name;
                 btnExport.disabled = false;
-                selectedLayerIndex = null;
+                selectedLayerIndices.clear();
                 undoStack.length = 0;
                 toast(`Loaded "${file.name}"`, 'success');
                 renderPreview();
@@ -282,39 +283,75 @@
                 if (a.layers) findMaxInd(a.layers);
             }
         }
-        const indOffset = maxInd + 1;
 
-        // 2. Build asset ID prefix to avoid collisions
-        const assetPrefix = '_m' + Date.now() + '_';
-
-        // 3. Process incoming layers — shift ind and parent references
-        const clonedLayers = JSON.parse(JSON.stringify(incoming.layers));
-        for (const layer of clonedLayers) {
-            if (layer.ind !== undefined) layer.ind += indOffset;
-            if (layer.parent !== undefined) layer.parent += indOffset;
-            // Update precomp refId
-            if (layer.ty === 0 && layer.refId) {
-                layer.refId = assetPrefix + layer.refId;
+        // 2. Create Null parent for existing layers (if not already grouped)
+        const existingName = (fileNameLabel.textContent || 'Original').replace(/\.json$/i, '').replace(/\.tgs$/i, '');
+        const hasExistingGroup = lottieData.layers.some(l => l._isGroup);
+        
+        if (!hasExistingGroup) {
+            const groupInd = maxInd + 1;
+            maxInd = groupInd;
+            const existingGroup = {
+                ty: 3, // Null
+                nm: existingName,
+                ind: groupInd,
+                ip: lottieData.ip || 0,
+                op: lottieData.op || 60,
+                ks: { o: {a:0,k:100}, r: {a:0,k:0}, p: {a:0,k:[0,0,0]}, a: {a:0,k:[0,0,0]}, s: {a:0,k:[100,100,100]} },
+                _isGroup: true,
+            };
+            // Parent all top-level layers that don't already have a parent
+            for (const l of lottieData.layers) {
+                if (l.parent === undefined) l.parent = groupInd;
             }
-            // Update image refId
-            if (layer.ty === 2 && layer.refId) {
-                layer.refId = assetPrefix + layer.refId;
-            }
-            // Tag with source file name
-            layer.nm = (layer.nm || 'Layer') + ` [${fileName.replace(/\.json$/i, '')}]`;
+            lottieData.layers.unshift(existingGroup);
         }
 
-        // 4. Merge assets
+        // Re-calc maxInd after potential group addition
+        maxInd = 0;
+        findMaxInd(lottieData.layers);
+        const indOffset = maxInd + 1;
+
+        // 3. Build asset ID prefix
+        const assetPrefix = '_m' + Date.now() + '_';
+
+        // 4. Create Null parent for incoming layers
+        const incomingGroupInd = indOffset;
+        const cleanName = fileName.replace(/\.json$/i, '').replace(/\.tgs$/i, '');
+        const incomingGroup = {
+            ty: 3,
+            nm: cleanName,
+            ind: incomingGroupInd,
+            ip: incoming.ip || 0,
+            op: incoming.op || 60,
+            ks: { o: {a:0,k:100}, r: {a:0,k:0}, p: {a:0,k:[0,0,0]}, a: {a:0,k:[0,0,0]}, s: {a:0,k:[100,100,100]} },
+            _isGroup: true,
+        };
+
+        // 5. Process incoming layers — shift ind and parent
+        const clonedLayers = JSON.parse(JSON.stringify(incoming.layers));
+        for (const layer of clonedLayers) {
+            const oldInd = layer.ind;
+            if (layer.ind !== undefined) layer.ind += indOffset + 1;
+            if (layer.parent !== undefined) {
+                layer.parent += indOffset + 1;
+            } else {
+                layer.parent = incomingGroupInd;
+            }
+            if (layer.ty === 0 && layer.refId) layer.refId = assetPrefix + layer.refId;
+            if (layer.ty === 2 && layer.refId) layer.refId = assetPrefix + layer.refId;
+        }
+
+        // 6. Merge assets
         if (incoming.assets && incoming.assets.length > 0) {
             if (!lottieData.assets) lottieData.assets = [];
             for (const asset of incoming.assets) {
                 const cloned = JSON.parse(JSON.stringify(asset));
                 cloned.id = assetPrefix + cloned.id;
-                // If asset has layers (precomp), shift their indices too
                 if (cloned.layers) {
                     for (const l of cloned.layers) {
-                        if (l.ind !== undefined) l.ind += indOffset;
-                        if (l.parent !== undefined) l.parent += indOffset;
+                        if (l.ind !== undefined) l.ind += indOffset + 1;
+                        if (l.parent !== undefined) l.parent += indOffset + 1;
                         if (l.ty === 0 && l.refId) l.refId = assetPrefix + l.refId;
                         if (l.ty === 2 && l.refId) l.refId = assetPrefix + l.refId;
                     }
@@ -323,21 +360,15 @@
             }
         }
 
-        // 5. Expand canvas if incoming is larger
+        // 7. Expand canvas / frame range / fps
         if (incoming.w > lottieData.w) lottieData.w = incoming.w;
         if (incoming.h > lottieData.h) lottieData.h = incoming.h;
-
-        // 6. Expand frame range if needed
         if (incoming.ip < lottieData.ip) lottieData.ip = incoming.ip;
         if (incoming.op > lottieData.op) lottieData.op = incoming.op;
+        if (incoming.fr && incoming.fr > (lottieData.fr || 30)) lottieData.fr = incoming.fr;
 
-        // 7. Match frame rate (use the higher one)
-        if (incoming.fr && incoming.fr > (lottieData.fr || 30)) {
-            lottieData.fr = incoming.fr;
-        }
-
-        // 8. Append layers
-        lottieData.layers = lottieData.layers.concat(clonedLayers);
+        // 8. Append: group null + children
+        lottieData.layers.push(incomingGroup, ...clonedLayers);
     }
 
     // ═══════════════════════════════════════════
@@ -512,53 +543,55 @@
 
     lottiePlayer.addEventListener('mousedown', (e) => {
         if (!lottieData) return;
-        if (selectedLayerIndex === null || !flatLayers[selectedLayerIndex]) return;
+        if (selectedLayerIndices.size === 0) return;
 
-        const entry = flatLayers[selectedLayerIndex];
-        const ks = entry.layer.ks;
-        if (!ks || !ks.p) return;
+        // Collect all draggable selected layers
+        dragEntries = [];
+        for (const si of selectedLayerIndices) {
+            const entry = flatLayers[si];
+            if (!entry || !entry.layer.ks || !entry.layer.ks.p) continue;
+            const pos = getStaticOrFirstKeyframe(entry.layer.ks.p);
+            dragEntries.push({ entry, startX: pos[0], startY: pos[1] });
+        }
+        if (dragEntries.length === 0) return;
 
-        // Save snapshot before drag starts
         saveSnapshot();
-
         isDragging = true;
-        dragLayerEntry = entry;
         dragStartMouseX = e.clientX;
         dragStartMouseY = e.clientY;
 
-        const pos = getStaticOrFirstKeyframe(ks.p);
-        dragStartLayerX = pos[0];
-        dragStartLayerY = pos[1];
+        // For single-layer compat
+        dragLayerEntry = dragEntries[0].entry;
+        dragStartLayerX = dragEntries[0].startX;
+        dragStartLayerY = dragEntries[0].startY;
 
-        // Pause animation during drag for responsive feedback
-        if (anim && isPlaying) {
-            anim.pause();
-        }
-
+        if (anim && isPlaying) anim.pause();
         lottiePlayer.style.cursor = 'grabbing';
         e.preventDefault();
     });
 
     document.addEventListener('mousemove', (e) => {
-        if (!isDragging || !dragLayerEntry) return;
+        if (!isDragging || dragEntries.length === 0) return;
 
         const dx = (e.clientX - dragStartMouseX) / previewScale;
         const dy = (e.clientY - dragStartMouseY) / previewScale;
 
-        const newX = Math.round(dragStartLayerX + dx);
-        const newY = Math.round(dragStartLayerY + dy);
+        for (const de of dragEntries) {
+            const newX = Math.round(de.startX + dx);
+            const newY = Math.round(de.startY + dy);
+            setStaticOrFirstKeyframe(de.entry.layer.ks.p, [newX, newY]);
+        }
 
-        const ks = dragLayerEntry.layer.ks;
-        setStaticOrFirstKeyframe(ks.p, [newX, newY]);
-
-        // Live re-render preview
         renderPreviewSilent();
 
-        // Update inspector inputs if visible
-        const inpX = document.getElementById('inp-pos-x');
-        const inpY = document.getElementById('inp-pos-y');
-        if (inpX) inpX.value = newX;
-        if (inpY) inpY.value = newY;
+        // Update inspector inputs for first selected
+        if (dragEntries.length === 1) {
+            const inpX = document.getElementById('inp-pos-x');
+            const inpY = document.getElementById('inp-pos-y');
+            const pos = getStaticOrFirstKeyframe(dragEntries[0].entry.layer.ks.p);
+            if (inpX) inpX.value = pos[0];
+            if (inpY) inpY.value = pos[1];
+        }
     });
 
     document.addEventListener('mouseup', () => {
@@ -680,7 +713,7 @@
         flatLayers.forEach((entry, idx) => {
             const { layer, depth } = entry;
             const item = document.createElement('div');
-            item.className = 'layer-item' + (idx === selectedLayerIndex ? ' selected' : '');
+            item.className = 'layer-item' + (selectedLayerIndices.has(idx) ? ' selected' : '');
             item.style.paddingLeft = (10 + depth * 16) + 'px';
             item.dataset.index = idx;
 
@@ -710,7 +743,7 @@
             item.appendChild(tag);
             item.appendChild(delBtn);
 
-            item.addEventListener('click', () => selectLayer(idx));
+            item.addEventListener('click', (e) => selectLayer(idx, e));
             layersList.appendChild(item);
         });
     }
@@ -856,7 +889,7 @@
 
         switch (currentTab) {
             case 'colors':
-                selectedLayerIndex = null;
+                selectedLayerIndices.clear();
                 layersList.querySelectorAll('.layer-item').forEach(el => el.classList.remove('selected'));
                 updateSelectionBox();
                 renderGlobalColorPalette();
@@ -1109,39 +1142,46 @@
         const entry = flatLayers[idx];
         if (!entry) return;
 
-        // Save snapshot before deletion
         saveSnapshot();
 
-        const { layer, path } = entry;
-        const layerName = layer.nm || `Layer ${idx}`;
-
-        // Determine which layers array to splice from
-        let layersArray;
-        if (path[0] === 'asset') {
-            // Layer inside an asset (precomp)
-            const asset = lottieData.assets.find(a => a.id === path[1]);
-            if (asset && asset.layers) {
-                layersArray = asset.layers;
+        // If this layer is selected, delete ALL selected layers
+        if (selectedLayerIndices.has(idx) && selectedLayerIndices.size > 1) {
+            const sorted = [...selectedLayerIndices].sort((a, b) => b - a); // reverse order
+            let count = 0;
+            for (const si of sorted) {
+                const e = flatLayers[si];
+                if (!e) continue;
+                let arr;
+                if (e.path[0] === 'asset') {
+                    const asset = lottieData.assets.find(a => a.id === e.path[1]);
+                    arr = asset && asset.layers;
+                } else {
+                    arr = lottieData.layers;
+                }
+                if (!arr) continue;
+                const ai = arr.indexOf(e.layer);
+                if (ai !== -1) { arr.splice(ai, 1); count++; }
             }
+            selectedLayerIndices.clear();
+            toast(`Deleted ${count} layers`, 'info');
         } else {
-            layersArray = lottieData.layers;
+            const { layer, path } = entry;
+            const layerName = layer.nm || `Layer ${idx}`;
+            let layersArray;
+            if (path[0] === 'asset') {
+                const asset = lottieData.assets.find(a => a.id === path[1]);
+                if (asset && asset.layers) layersArray = asset.layers;
+            } else {
+                layersArray = lottieData.layers;
+            }
+            if (!layersArray) return;
+            const arrayIndex = layersArray.indexOf(layer);
+            if (arrayIndex === -1) return;
+            layersArray.splice(arrayIndex, 1);
+            selectedLayerIndices.delete(idx);
+            toast(`Deleted "${layerName}"`, 'info');
         }
 
-        if (!layersArray) return;
-
-        const arrayIndex = layersArray.indexOf(layer);
-        if (arrayIndex === -1) return;
-
-        layersArray.splice(arrayIndex, 1);
-
-        // Adjust selection
-        if (selectedLayerIndex === idx) {
-            selectedLayerIndex = null;
-        } else if (selectedLayerIndex !== null && selectedLayerIndex > idx) {
-            selectedLayerIndex--;
-        }
-
-        toast(`Deleted "${layerName}"`, 'info');
         renderPreview();
         buildLayersList();
         renderInspector();
@@ -1251,7 +1291,7 @@
             return;
         }
 
-        if (selectedLayerIndex === null || !flatLayers[selectedLayerIndex]) {
+        if (selectedLayerIndices.size === 0) {
             inspectorContent.innerHTML = `
                 <div class="empty-state">
                     <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
@@ -1263,7 +1303,21 @@
             return;
         }
 
-        const { layer } = flatLayers[selectedLayerIndex];
+        // Multi-select: show info for first selected, or multi-message
+        if (selectedLayerIndices.size > 1) {
+            inspectorContent.innerHTML = `
+                <div class="empty-state">
+                    <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+                        <rect x="6" y="10" width="36" height="28" rx="4" stroke="currentColor" stroke-width="2" opacity=".3"/>
+                        <path d="M6 18h36M16 10v28" stroke="currentColor" stroke-width="2" opacity=".2"/>
+                    </svg>
+                    <p>${selectedLayerIndices.size} layers selected<br>Drag to move all · Click ✕ to delete all</p>
+                </div>`;
+            return;
+        }
+
+        const firstIdx = [...selectedLayerIndices][0];
+        const { layer } = flatLayers[firstIdx];
         let html = '';
 
         // ─── Layer Info ───
