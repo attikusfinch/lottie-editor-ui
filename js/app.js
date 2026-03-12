@@ -48,20 +48,32 @@ document.addEventListener('drop', (e) => {
     }
 });
 
-// ─── Undo (Ctrl+Z) ───
+// ─── Undo ───
+function performUndo() {
+    if (state.undoStack.length === 0) { toast('Nothing to undo', 'info'); return; }
+    state.lottieData = JSON.parse(state.undoStack.pop());
+    state.selectedLayerIndices.clear();
+    state.originalColors = null;
+    renderPreview();
+    buildLayersList();
+    renderInspector();
+    dom.btnUndo.disabled = state.undoStack.length === 0;
+    toast('Undo', 'info');
+}
+
 document.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
         e.preventDefault();
-        if (state.undoStack.length === 0) { toast('Nothing to undo', 'info'); return; }
-        state.lottieData = JSON.parse(state.undoStack.pop());
-        state.selectedLayerIndices.clear();
-        state.originalColors = null;
-        renderPreview();
-        buildLayersList();
-        renderInspector();
-        toast('Undo', 'info');
+        performUndo();
     }
 });
+
+dom.btnUndo.addEventListener('click', () => performUndo());
+
+// Enable undo button whenever a snapshot is saved
+setInterval(() => {
+    if (dom.btnUndo) dom.btnUndo.disabled = state.undoStack.length === 0;
+}, 500);
 
 // ─── Init subsystems ───
 initPlaybackControls();

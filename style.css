@@ -316,6 +316,39 @@ body {
     color: var(--danger);
 }
 
+.layer-chevron {
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0;
+    margin-right: 2px;
+    border-radius: 3px;
+    transition: transform 0.15s ease, color 0.15s ease;
+    transform: rotate(90deg);
+}
+
+.layer-chevron.collapsed {
+    transform: rotate(0deg);
+}
+
+.layer-chevron:hover {
+    color: var(--text-primary);
+    background: var(--bg-elevated);
+}
+
+.layer-chevron-spacer {
+    flex-shrink: 0;
+    width: 16px;
+    margin-right: 2px;
+}
+
 /* ===================== PREVIEW ===================== */
 
 #preview-section {

@@ -30,6 +30,7 @@ export const state = {
     originalColors: null,
     savedAdjust: { hue: 0, sat: 0, light: 0 },
     savedGroupAdjust: {},
+    collapsedLayers: new Set(), // layer indices that are collapsed in tree
 };
 
 /* DOM references — populated once at init */
@@ -54,6 +55,7 @@ export function initDom() {
     dom.btnLoop          = document.getElementById('btn-loop');
     dom.exportDropdown   = document.getElementById('export-dropdown');
     dom.mergeInput       = document.getElementById('merge-input');
+    dom.btnUndo          = document.getElementById('btn-undo');
 }
 
 /* Layer type constants */

@@ -12,25 +12,63 @@ export function setInspectorCallbacks(ri, rat) {
     renderActiveTabFn = rat;
 }
 
-// ─── Flat Layer Builder ───
+// ─── Flat Layer Builder (tree-aware with parent/ind) ───
 export function buildFlatLayers() {
     state.flatLayers = [];
     if (!state.lottieData || !state.lottieData.layers) return;
 
-    function walk(layers, depth, parentPath) {
-        for (let i = 0; i < layers.length; i++) {
-            const layer = layers[i];
-            const path = parentPath.concat(i);
-            state.flatLayers.push({ layer, path, depth });
-            if (layer.ty === 0 && layer.refId && state.lottieData.assets) {
-                const asset = state.lottieData.assets.find(a => a.id === layer.refId);
-                if (asset && asset.layers) {
-                    walk(asset.layers, depth + 1, ['asset', layer.refId]);
+    const layers = state.lottieData.layers;
+
+    // Build ind → layer map and children map
+    const byInd = new Map();
+    for (const l of layers) {
+        if (l.ind !== undefined) byInd.set(l.ind, l);
+    }
+
+    // Find roots (no parent, or parent not found)
+    const roots = [];
+    const childrenOf = new Map(); // parentInd → [layer, ...]
+    for (const l of layers) {
+        if (l.parent !== undefined && byInd.has(l.parent)) {
+            if (!childrenOf.has(l.parent)) childrenOf.set(l.parent, []);
+            childrenOf.get(l.parent).push(l);
+        } else {
+            roots.push(l);
+        }
+    }
+
+    function walk(layer, depth) {
+        const idx = state.flatLayers.length;
+        const hasChildren = (childrenOf.has(layer.ind)) ||
+            (layer.ty === 0 && layer.refId && state.lottieData.assets);
+        const layerKey = layer.ind !== undefined ? layer.ind : 'L' + layers.indexOf(layer);
+        state.flatLayers.push({ layer, path: [layers.indexOf(layer)], depth, hasChildren, layerKey });
+
+        // Skip children if collapsed (use layer.ind as stable key)
+        if (state.collapsedLayers.has(layerKey)) return;
+
+        // Child layers (via parent property)
+        if (layer.ind !== undefined && childrenOf.has(layer.ind)) {
+            for (const child of childrenOf.get(layer.ind)) {
+                walk(child, depth + 1);
+            }
+        }
+
+        // Precomp children (in assets)
+        if (layer.ty === 0 && layer.refId && state.lottieData.assets) {
+            const asset = state.lottieData.assets.find(a => a.id === layer.refId);
+            if (asset && asset.layers) {
+                for (const child of asset.layers) {
+                    const ci = state.flatLayers.length;
+                    state.flatLayers.push({ layer: child, path: ['asset', layer.refId, asset.layers.indexOf(child)], depth: depth + 1, hasChildren: false });
                 }
             }
         }
     }
-    walk(state.lottieData.layers, 0, []);
+
+    for (const root of roots) {
+        walk(root, 0);
+    }
 }
 
 // ─── Layer List ───
@@ -45,11 +83,33 @@ export function buildLayersList() {
     }
 
     state.flatLayers.forEach((entry, idx) => {
-        const { layer, depth } = entry;
+        const { layer, depth, hasChildren } = entry;
         const item = document.createElement('div');
         item.className = 'layer-item' + (state.selectedLayerIndices.has(idx) ? ' selected' : '');
         item.style.paddingLeft = (10 + depth * 16) + 'px';
         item.dataset.index = idx;
+
+        // Collapse/expand chevron
+        if (hasChildren) {
+            const key = entry.layerKey;
+            const chevron = document.createElement('button');
+            chevron.className = 'layer-chevron' + (state.collapsedLayers.has(key) ? ' collapsed' : '');
+            chevron.innerHTML = `<svg width="10" height="10" viewBox="0 0 10 10"><path d="M3 2l4 3-4 3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+            chevron.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (state.collapsedLayers.has(key)) {
+                    state.collapsedLayers.delete(key);
+                } else {
+                    state.collapsedLayers.add(key);
+                }
+                buildLayersList();
+            });
+            item.appendChild(chevron);
+        } else {
+            const spacer = document.createElement('div');
+            spacer.className = 'layer-chevron-spacer';
+            item.appendChild(spacer);
+        }
 
         const icon = document.createElement('div');
         icon.className = 'layer-icon';

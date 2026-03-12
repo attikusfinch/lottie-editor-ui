@@ -61,6 +61,11 @@ export function loadFile(file, { renderPreview, buildLayersList, renderInspector
             state.originalColors = null;
             state.savedAdjust = { hue: 0, sat: 0, light: 0 };
             state.savedGroupAdjust = {};
+            state.collapsedLayers.clear();
+
+            // Auto-wrap all layers in a Null group
+            wrapInGroup(file.name);
+
             toast(`Loaded "${file.name}"`, 'success');
             renderPreview();
             buildLayersList();
@@ -70,6 +75,30 @@ export function loadFile(file, { renderPreview, buildLayersList, renderInspector
             toast('Failed to load: ' + err.message, 'error');
         }
     });
+}
+
+// ─── Wrap all top-level layers in a Null group ───
+function wrapInGroup(fileName) {
+    if (!state.lottieData || !state.lottieData.layers || state.lottieData.layers.length === 0) return;
+    // Skip if already wrapped
+    if (state.lottieData.layers.some(l => l._isGroup)) return;
+
+    let maxInd = 0;
+    for (const l of state.lottieData.layers) {
+        if (l.ind !== undefined && l.ind > maxInd) maxInd = l.ind;
+    }
+    const groupInd = maxInd + 1;
+    const cleanName = fileName.replace(/\.json$/i, '').replace(/\.tgs$/i, '');
+    const group = {
+        ty: 3, nm: cleanName, ind: groupInd,
+        ip: state.lottieData.ip || 0, op: state.lottieData.op || 60,
+        ks: { o:{a:0,k:100}, r:{a:0,k:0}, p:{a:0,k:[0,0,0]}, a:{a:0,k:[0,0,0]}, s:{a:0,k:[100,100,100]} },
+        _isGroup: true,
+    };
+    for (const l of state.lottieData.layers) {
+        if (l.parent === undefined) l.parent = groupInd;
+    }
+    state.lottieData.layers.unshift(group);
 }
 
 // ─── Merge File ───
