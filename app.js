@@ -32,6 +32,7 @@
     // ─── Tabs ───
     let currentTab = 'colors'; // 'colors' | 'adjust' | 'inspector'
     let originalColors = null; // snapshot for non-destructive HSL adjust
+    let savedAdjust = { hue: 0, sat: 0, light: 0 }; // persist sliders across tab switches
 
     // ─── DOM refs ───
     const fileInput       = document.getElementById('file-input');
@@ -848,7 +849,7 @@
                         <circle cx="24" cy="24" r="18" stroke="currentColor" stroke-width="2" opacity=".2"/>
                         <path d="M24 16v8M24 28v2" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" opacity=".3"/>
                     </svg>
-                    <p>Load a file to begin</p>
+                    <p>Import .json or .tgs<br>to begin</p>
                 </div>`;
             return;
         }
@@ -937,12 +938,12 @@
     function renderAdjustPanel() {
         if (!lottieData || flatLayers.length === 0) {
             inspectorContent.innerHTML = `
-                <div class="empty-state"><p>Load a file first</p></div>`;
+                <div class="empty-state"><p>Import .json or .tgs first</p></div>`;
             return;
         }
 
-        // Capture original colors when entering adjust tab
-        captureOriginalColors();
+        // Only re-capture if we don't have a snapshot yet
+        if (!originalColors) captureOriginalColors();
 
         inspectorContent.innerHTML = `
             <div class="inspector-section">
@@ -950,18 +951,18 @@
                 <div class="adjust-section">
                     <div class="adjust-row">
                         <span class="adjust-label">Hue</span>
-                        <input type="range" class="adjust-slider" id="adj-hue" min="-180" max="180" value="0" step="1">
-                        <span class="adjust-value" id="adj-hue-val">0°</span>
+                        <input type="range" class="adjust-slider" id="adj-hue" min="-180" max="180" value="${savedAdjust.hue}" step="1">
+                        <span class="adjust-value" id="adj-hue-val">${savedAdjust.hue}°</span>
                     </div>
                     <div class="adjust-row">
                         <span class="adjust-label">Saturation</span>
-                        <input type="range" class="adjust-slider" id="adj-sat" min="-100" max="100" value="0" step="1">
-                        <span class="adjust-value" id="adj-sat-val">0%</span>
+                        <input type="range" class="adjust-slider" id="adj-sat" min="-100" max="100" value="${savedAdjust.sat}" step="1">
+                        <span class="adjust-value" id="adj-sat-val">${savedAdjust.sat}%</span>
                     </div>
                     <div class="adjust-row">
                         <span class="adjust-label">Lightness</span>
-                        <input type="range" class="adjust-slider" id="adj-light" min="-100" max="100" value="0" step="1">
-                        <span class="adjust-value" id="adj-light-val">0%</span>
+                        <input type="range" class="adjust-slider" id="adj-light" min="-100" max="100" value="${savedAdjust.light}" step="1">
+                        <span class="adjust-value" id="adj-light-val">${savedAdjust.light}%</span>
                     </div>
                     <button class="adjust-reset-btn" id="adj-reset">Reset Adjustments</button>
                 </div>
@@ -985,6 +986,9 @@
             const h = parseInt(hueSlider.value);
             const s = parseInt(satSlider.value);
             const l = parseInt(lightSlider.value);
+            savedAdjust.hue = h;
+            savedAdjust.sat = s;
+            savedAdjust.light = l;
             hueVal.textContent = h + '°';
             satVal.textContent = s + '%';
             lightVal.textContent = l + '%';
@@ -1000,8 +1004,9 @@
             hueSlider.value = 0;
             satSlider.value = 0;
             lightSlider.value = 0;
+            savedAdjust = { hue: 0, sat: 0, light: 0 };
             snapshotSaved = false;
-            captureOriginalColors(); // re-snapshot current state as new base
+            captureOriginalColors();
             onAdjust();
         });
     }
