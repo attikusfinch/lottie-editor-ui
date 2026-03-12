@@ -111,9 +111,11 @@ export function buildLayersList() {
             item.appendChild(spacer);
         }
 
-        const icon = document.createElement('div');
-        icon.className = 'layer-icon';
-        icon.textContent = TYPE_ICONS[layer.ty] || '?';
+        // Thumbnail container (populated async after render)
+        const thumb = document.createElement('div');
+        thumb.className = 'layer-thumb';
+        thumb.dataset.flatIdx = idx;
+        thumb.textContent = TYPE_ICONS[layer.ty] || '?';
 
         const name = document.createElement('span');
         name.className = 'layer-name';
@@ -132,13 +134,72 @@ export function buildLayersList() {
             deleteLayer(idx);
         });
 
-        item.appendChild(icon);
+        item.appendChild(thumb);
         item.appendChild(name);
         item.appendChild(tag);
         item.appendChild(delBtn);
 
         item.addEventListener('click', (e) => selectLayer(idx, e));
         dom.layersList.appendChild(item);
+    });
+
+    // Generate thumbnails after a short delay (animation must be rendered)
+    requestAnimationFrame(() => requestAnimationFrame(() => renderLayerThumbnails()));
+}
+
+// ─── Layer Thumbnails (rasterized to avoid ID conflicts) ───
+function renderLayerThumbnails() {
+    if (!state.anim || !state.anim.renderer || !state.anim.renderer.elements) return;
+
+    const mainSvg = dom.lottiePlayer.querySelector('svg');
+    if (!mainSvg) return;
+
+    const thumbEls = dom.layersList.querySelectorAll('.layer-thumb');
+    thumbEls.forEach(thumbEl => {
+        const idx = parseInt(thumbEl.dataset.flatIdx);
+        const entry = state.flatLayers[idx];
+        if (!entry) return;
+
+        const svgGroup = findRenderedLayerElement(entry);
+        if (!svgGroup) return;
+
+        try {
+            const bbox = svgGroup.getBBox();
+            if (bbox.width < 1 && bbox.height < 1) return;
+
+            // Build a standalone SVG string (no shared IDs in the DOM)
+            const ns = 'http://www.w3.org/2000/svg';
+            const tmpSvg = document.createElementNS(ns, 'svg');
+            tmpSvg.setAttribute('xmlns', ns);
+            tmpSvg.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+            const pad = Math.max(bbox.width, bbox.height) * 0.05;
+            tmpSvg.setAttribute('viewBox',
+                `${bbox.x - pad} ${bbox.y - pad} ${bbox.width + pad * 2} ${bbox.height + pad * 2}`);
+            tmpSvg.setAttribute('width', '56');
+            tmpSvg.setAttribute('height', '56');
+
+            // Copy defs for gradients/filters
+            const defs = mainSvg.querySelector('defs');
+            if (defs) tmpSvg.appendChild(defs.cloneNode(true));
+            tmpSvg.appendChild(svgGroup.cloneNode(true));
+
+            // Serialize → data URL → <img>
+            const svgStr = new XMLSerializer().serializeToString(tmpSvg);
+            const dataUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgStr);
+
+            const img = document.createElement('img');
+            img.width = 28;
+            img.height = 28;
+            img.style.display = 'block';
+            img.style.objectFit = 'contain';
+            img.src = dataUrl;
+            img.onload = () => {
+                thumbEl.textContent = '';
+                thumbEl.appendChild(img);
+            };
+        } catch (e) {
+            // Keep fallback emoji
+        }
     });
 }
 
@@ -185,48 +246,53 @@ export function selectLayer(idx, event) {
     dom.lottiePlayer.style.cursor = state.selectedLayerIndices.size > 0 ? 'grab' : '';
 }
 
-// ─── Delete Layer ───
+// ─── Cascade Delete: collect a layer and all its children (by parent chain) ───
+function collectLayerAndChildren(layer, allLayers) {
+    const toDelete = new Set();
+    toDelete.add(layer);
+    if (layer.ind === undefined) return toDelete;
+
+    // BFS to find all descendants
+    const queue = [layer.ind];
+    while (queue.length > 0) {
+        const parentInd = queue.shift();
+        for (const l of allLayers) {
+            if (l.parent === parentInd && !toDelete.has(l)) {
+                toDelete.add(l);
+                if (l.ind !== undefined) queue.push(l.ind);
+            }
+        }
+    }
+    return toDelete;
+}
+
+// ─── Delete Layer (with cascade) ───
 export function deleteLayer(idx) {
     const entry = state.flatLayers[idx];
     if (!entry) return;
     saveSnapshot();
 
-    if (state.selectedLayerIndices.has(idx) && state.selectedLayerIndices.size > 1) {
-        const sorted = [...state.selectedLayerIndices].sort((a, b) => b - a);
-        let count = 0;
-        for (const si of sorted) {
-            const e = state.flatLayers[si];
-            if (!e) continue;
-            let arr;
-            if (e.path[0] === 'asset') {
-                const asset = state.lottieData.assets.find(a => a.id === e.path[1]);
-                arr = asset && asset.layers;
-            } else {
-                arr = state.lottieData.layers;
-            }
-            if (!arr) continue;
-            const ai = arr.indexOf(e.layer);
-            if (ai !== -1) { arr.splice(ai, 1); count++; }
-        }
-        state.selectedLayerIndices.clear();
-        toast(`Deleted ${count} layers`, 'info');
-    } else {
-        const { layer, path } = entry;
-        const layerName = layer.nm || `Layer ${idx}`;
-        let layersArray;
-        if (path[0] === 'asset') {
-            const asset = state.lottieData.assets.find(a => a.id === path[1]);
-            if (asset && asset.layers) layersArray = asset.layers;
-        } else {
-            layersArray = state.lottieData.layers;
-        }
-        if (!layersArray) return;
-        const arrayIndex = layersArray.indexOf(layer);
-        if (arrayIndex === -1) return;
-        layersArray.splice(arrayIndex, 1);
-        state.selectedLayerIndices.delete(idx);
-        toast(`Deleted "${layerName}"`, 'info');
+    // Collect all indices to delete (including children of selected)
+    const layersToRemove = new Set();
+
+    const indicesToProcess = (state.selectedLayerIndices.has(idx) && state.selectedLayerIndices.size > 1)
+        ? [...state.selectedLayerIndices]
+        : [idx];
+
+    for (const si of indicesToProcess) {
+        const e = state.flatLayers[si];
+        if (!e) continue;
+        const cascade = collectLayerAndChildren(e.layer, state.lottieData.layers);
+        for (const l of cascade) layersToRemove.add(l);
     }
+
+    // Remove from layers array
+    const before = state.lottieData.layers.length;
+    state.lottieData.layers = state.lottieData.layers.filter(l => !layersToRemove.has(l));
+    const removed = before - state.lottieData.layers.length;
+
+    state.selectedLayerIndices.clear();
+    toast(`Deleted ${removed} layer${removed !== 1 ? 's' : ''}`, 'info');
 
     renderPreview();
     buildLayersList();
