@@ -362,6 +362,39 @@ body {
     margin-right: 2px;
 }
 
+.layer-move-btns {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    flex-shrink: 0;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+}
+
+.layer-item:hover .layer-move-btns {
+    opacity: 1;
+}
+
+.layer-move-btn {
+    width: 18px;
+    height: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0;
+    border-radius: 2px;
+    transition: all 0.1s ease;
+}
+
+.layer-move-btn:hover {
+    color: var(--accent);
+    background: var(--bg-elevated);
+}
+
 /* ===================== PREVIEW ===================== */
 
 #preview-section {

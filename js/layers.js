@@ -125,6 +125,25 @@ export function buildLayersList() {
         tag.className = 'layer-type-tag';
         tag.textContent = TYPE_NAMES[layer.ty] || `ty:${layer.ty}`;
 
+        // Move up/down buttons
+        const moveWrap = document.createElement('div');
+        moveWrap.className = 'layer-move-btns';
+
+        const upBtn = document.createElement('button');
+        upBtn.className = 'layer-move-btn';
+        upBtn.title = 'Move up';
+        upBtn.innerHTML = `<svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 7l3-4 3 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+        upBtn.addEventListener('click', (e) => { e.stopPropagation(); moveLayer(idx, -1); });
+
+        const downBtn = document.createElement('button');
+        downBtn.className = 'layer-move-btn';
+        downBtn.title = 'Move down';
+        downBtn.innerHTML = `<svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 3l3 4 3-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+        downBtn.addEventListener('click', (e) => { e.stopPropagation(); moveLayer(idx, 1); });
+
+        moveWrap.appendChild(upBtn);
+        moveWrap.appendChild(downBtn);
+
         const delBtn = document.createElement('button');
         delBtn.className = 'layer-delete-btn';
         delBtn.title = 'Delete layer';
@@ -137,6 +156,7 @@ export function buildLayersList() {
         item.appendChild(thumb);
         item.appendChild(name);
         item.appendChild(tag);
+        item.appendChild(moveWrap);
         item.appendChild(delBtn);
 
         item.addEventListener('click', (e) => selectLayer(idx, e));
@@ -201,6 +221,86 @@ function renderLayerThumbnails() {
             // Keep fallback emoji
         }
     });
+}
+
+// ─── Collect a layer and all its descendants ───
+function collectDescendants(layer, allLayers) {
+    const result = new Set();
+    result.add(layer);
+    if (layer.ind === undefined) return result;
+    const queue = [layer.ind];
+    while (queue.length > 0) {
+        const pInd = queue.shift();
+        for (const l of allLayers) {
+            if (l.parent === pInd && !result.has(l)) {
+                result.add(l);
+                if (l.ind !== undefined) queue.push(l.ind);
+            }
+        }
+    }
+    return result;
+}
+
+// ─── Move Layer Up/Down (moves entire group for z-order) ───
+function moveLayer(flatIdx, direction) {
+    const entry = state.flatLayers[flatIdx];
+    if (!entry) return;
+    const layer = entry.layer;
+    const layers = state.lottieData.layers;
+
+    // Find same-level siblings (same parent value)
+    const parentVal = layer.parent;
+    const topLevelSiblings = [];
+    for (const l of layers) {
+        if (l.parent === parentVal) topLevelSiblings.push(l);
+    }
+
+    const myPos = topLevelSiblings.indexOf(layer);
+    if (myPos === -1) return;
+
+    const targetPos = myPos + direction;
+    if (targetPos < 0 || targetPos >= topLevelSiblings.length) return;
+
+    saveSnapshot();
+
+    const targetLayer = topLevelSiblings[targetPos];
+
+    // Collect all layers in "my" group and "target" group
+    const myGroup = collectDescendants(layer, layers);
+    const targetGroup = collectDescendants(targetLayer, layers);
+
+    // Build new layers array: replace myGroup and targetGroup in swapped order
+    const newLayers = [];
+    let i = 0;
+    while (i < layers.length) {
+        if (myGroup.has(layers[i])) {
+            // Skip my group layers (will insert target group here)
+            if (direction < 0) {
+                // Moving up: insert my group, then target group
+                for (const l of layers) { if (myGroup.has(l)) newLayers.push(l); }
+                for (const l of layers) { if (targetGroup.has(l)) newLayers.push(l); }
+            } else {
+                // Moving down: insert target group, then my group
+                for (const l of layers) { if (targetGroup.has(l)) newLayers.push(l); }
+                for (const l of layers) { if (myGroup.has(l)) newLayers.push(l); }
+            }
+            // Skip all layers from both groups
+            while (i < layers.length && (myGroup.has(layers[i]) || targetGroup.has(layers[i]))) i++;
+        } else if (targetGroup.has(layers[i])) {
+            // Skip target group layers (already inserted above)
+            while (i < layers.length && targetGroup.has(layers[i])) i++;
+        } else {
+            newLayers.push(layers[i]);
+            i++;
+        }
+    }
+
+    // Replace layers array contents
+    state.lottieData.layers = newLayers;
+
+    renderPreview();
+    buildLayersList();
+    if (renderInspectorFn) renderInspectorFn();
 }
 
 // ─── Select Layer (multi-select with Ctrl) ───
