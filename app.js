@@ -176,6 +176,118 @@
     }
 
     // ═══════════════════════════════════════════
+    // Merge Lottie
+    // ═══════════════════════════════════════════
+
+    const mergeInput = document.getElementById('merge-input');
+
+    mergeInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        mergeFile(file);
+        mergeInput.value = ''; // reset so same file can be merged again
+    });
+
+    function mergeFile(file) {
+        if (!lottieData) {
+            // If no base file loaded, just load it normally
+            loadFile(file);
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            try {
+                const incoming = JSON.parse(ev.target.result);
+                if (!incoming.layers || !Array.isArray(incoming.layers)) {
+                    throw new Error('Invalid Lottie: no layers array');
+                }
+                saveSnapshot();
+                mergeLottie(incoming, file.name);
+                toast(`Merged "${file.name}" (${incoming.layers.length} layers)`, 'success');
+                renderPreview();
+                buildLayersList();
+                renderInspector();
+            } catch (err) {
+                toast('Merge failed: ' + err.message, 'error');
+            }
+        };
+        reader.readAsText(file);
+    }
+
+    function mergeLottie(incoming, fileName) {
+        // 1. Find the max layer index in current data
+        let maxInd = 0;
+        function findMaxInd(layers) {
+            for (const l of layers) {
+                if (l.ind !== undefined && l.ind > maxInd) maxInd = l.ind;
+            }
+        }
+        findMaxInd(lottieData.layers);
+        if (lottieData.assets) {
+            for (const a of lottieData.assets) {
+                if (a.layers) findMaxInd(a.layers);
+            }
+        }
+        const indOffset = maxInd + 1;
+
+        // 2. Build asset ID prefix to avoid collisions
+        const assetPrefix = '_m' + Date.now() + '_';
+
+        // 3. Process incoming layers — shift ind and parent references
+        const clonedLayers = JSON.parse(JSON.stringify(incoming.layers));
+        for (const layer of clonedLayers) {
+            if (layer.ind !== undefined) layer.ind += indOffset;
+            if (layer.parent !== undefined) layer.parent += indOffset;
+            // Update precomp refId
+            if (layer.ty === 0 && layer.refId) {
+                layer.refId = assetPrefix + layer.refId;
+            }
+            // Update image refId
+            if (layer.ty === 2 && layer.refId) {
+                layer.refId = assetPrefix + layer.refId;
+            }
+            // Tag with source file name
+            layer.nm = (layer.nm || 'Layer') + ` [${fileName.replace(/\.json$/i, '')}]`;
+        }
+
+        // 4. Merge assets
+        if (incoming.assets && incoming.assets.length > 0) {
+            if (!lottieData.assets) lottieData.assets = [];
+            for (const asset of incoming.assets) {
+                const cloned = JSON.parse(JSON.stringify(asset));
+                cloned.id = assetPrefix + cloned.id;
+                // If asset has layers (precomp), shift their indices too
+                if (cloned.layers) {
+                    for (const l of cloned.layers) {
+                        if (l.ind !== undefined) l.ind += indOffset;
+                        if (l.parent !== undefined) l.parent += indOffset;
+                        if (l.ty === 0 && l.refId) l.refId = assetPrefix + l.refId;
+                        if (l.ty === 2 && l.refId) l.refId = assetPrefix + l.refId;
+                    }
+                }
+                lottieData.assets.push(cloned);
+            }
+        }
+
+        // 5. Expand canvas if incoming is larger
+        if (incoming.w > lottieData.w) lottieData.w = incoming.w;
+        if (incoming.h > lottieData.h) lottieData.h = incoming.h;
+
+        // 6. Expand frame range if needed
+        if (incoming.ip < lottieData.ip) lottieData.ip = incoming.ip;
+        if (incoming.op > lottieData.op) lottieData.op = incoming.op;
+
+        // 7. Match frame rate (use the higher one)
+        if (incoming.fr && incoming.fr > (lottieData.fr || 30)) {
+            lottieData.fr = incoming.fr;
+        }
+
+        // 8. Append layers
+        lottieData.layers = lottieData.layers.concat(clonedLayers);
+    }
+
+    // ═══════════════════════════════════════════
     // Preview Rendering
     // ═══════════════════════════════════════════
 

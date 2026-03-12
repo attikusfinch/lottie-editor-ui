@@ -15,6 +15,7 @@ Web-based Lottie animation editor. Load `.json` Lottie files, edit layers, and e
 - **Frame Boundaries** — visible canvas frame with corner markers and size label
 - **Playback Controls** — play/pause, scrubber, loop toggle
 - **Export** — JSON, TGS (Telegram Sticker), SVG frame, PNG frame
+- **Merge** — combine multiple Lottie files into one animation
 - **Drag & Drop** — drop a `.json` file onto the page to load it
 
 ## Tech Stack
@@ -38,7 +39,7 @@ Open `http://localhost:3000` and load a Lottie `.json` file.
 
 ## Author
 
-Made by [@fiscaldev](https://github.com/fiscaldev) · [Telegram](https://t.me/fiscaldev)
+Made by [@fiscaldev](https://t.me/fiscaldev)
 
 ## License
 

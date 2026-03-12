@@ -33,6 +33,11 @@
                 Load JSON
                 <input type="file" id="file-input" accept=".json" hidden>
             </label>
+            <label id="btn-merge" class="btn btn-secondary" tabindex="0" title="Add another Lottie and merge layers">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                Merge
+                <input type="file" id="merge-input" accept=".json" hidden>
+            </label>
             <!-- Export dropdown -->
             <div class="export-dropdown" id="export-dropdown">
                 <button id="btn-export" class="btn btn-primary" disabled>
@@ -130,9 +135,7 @@
 
     <!-- Footer -->
     <footer id="app-footer">
-        Made by <a href="https://github.com/fiscaldev" target="_blank">@fiscaldev</a>
-        <span class="footer-sep">·</span>
-        <a href="https://t.me/fiscaldev" target="_blank">Telegram</a>
+        Made by <a href="https://t.me/fiscaldev" target="_blank">@fiscaldev</a>
         <span class="footer-sep">·</span>
         SVG export powered by <a href="https://github.com/attikusfinch/lottie-to-svg" target="_blank">lottie-to-svg</a>
     </footer>
