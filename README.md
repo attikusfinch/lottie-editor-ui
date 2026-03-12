@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="logo.jpg" alt="Lottie Editor" width="128">
+</p>
+
 # Lottie Editor
 
 Web-based Lottie animation editor. Load `.json` Lottie files, edit layers, and export the result.
