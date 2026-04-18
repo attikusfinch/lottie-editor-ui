@@ -1,5 +1,3 @@
-/* Layer list, selection, deletion, drag-to-move, selection box */
-
 import { state, dom, TYPE_NAMES, TYPE_ICONS } from './state.js';
 import { saveSnapshot, getStaticOrFirstKeyframe, setStaticOrFirstKeyframe, toast } from './utils.js';
 import { renderPreview, renderPreviewSilent } from './preview.js';
@@ -10,6 +8,39 @@ let renderActiveTabFn = null;
 export function setInspectorCallbacks(ri, rat) {
     renderInspectorFn = ri;
     renderActiveTabFn = rat;
+}
+
+// ─── Extend All Layers to Full Animation Range ───
+export function extendAllLayers() {
+    if (!state.lottieData) return;
+    saveSnapshot();
+
+    const ip = state.lottieData.ip ?? 0;
+    const op = state.lottieData.op ?? 60;
+    let count = 0;
+
+    function extendLayers(layers) {
+        for (const layer of layers) {
+            if (layer.ip !== undefined && layer.ip > ip) { layer.ip = ip; count++; }
+            else if (layer.ip === undefined) { layer.ip = ip; count++; }
+            if (layer.op !== undefined && layer.op < op) { layer.op = op; count++; }
+            else if (layer.op === undefined) { layer.op = op; count++; }
+        }
+    }
+
+    extendLayers(state.lottieData.layers);
+
+    // Also extend layers inside assets (precomps)
+    if (state.lottieData.assets) {
+        for (const asset of state.lottieData.assets) {
+            if (asset.layers) extendLayers(asset.layers);
+        }
+    }
+
+    renderPreview();
+    buildLayersList();
+    if (renderInspectorFn) renderInspectorFn();
+    toast(`Extended all layers to ${ip}–${op}`, 'success');
 }
 
 // ─── Flat Layer Builder (tree-aware with parent/ind) ───
@@ -125,6 +156,19 @@ export function buildLayersList() {
         tag.className = 'layer-type-tag';
         tag.textContent = TYPE_NAMES[layer.ty] || `ty:${layer.ty}`;
 
+        // Timing badge (shows frame range, warns if shorter than animation)
+        const timingBadge = document.createElement('span');
+        const lIp = layer.ip ?? 0;
+        const lOp = layer.op ?? 60;
+        const gIp = state.lottieData.ip ?? 0;
+        const gOp = state.lottieData.op ?? 60;
+        const isShorter = (lIp > gIp || lOp < gOp);
+        timingBadge.className = 'layer-timing-badge' + (isShorter ? ' short' : '');
+        timingBadge.textContent = `${lIp}–${lOp}`;
+        timingBadge.title = isShorter
+            ? `Layer range ${lIp}–${lOp} is shorter than animation ${gIp}–${gOp}`
+            : `Frames ${lIp}–${lOp}`;
+
         // Move up/down buttons
         const moveWrap = document.createElement('div');
         moveWrap.className = 'layer-move-btns';
@@ -156,6 +200,7 @@ export function buildLayersList() {
         item.appendChild(thumb);
         item.appendChild(name);
         item.appendChild(tag);
+        item.appendChild(timingBadge);
         item.appendChild(moveWrap);
         item.appendChild(delBtn);
 

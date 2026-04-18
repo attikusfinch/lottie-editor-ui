@@ -60,6 +60,7 @@ export function initDom() {
     dom.trimIn           = document.getElementById('trim-in');
     dom.trimOut          = document.getElementById('trim-out');
     dom.btnTrimApply     = document.getElementById('btn-trim-apply');
+    dom.btnExtendAll     = document.getElementById('btn-extend-all');
 }
 
 /* Layer type constants */

@@ -85,7 +85,13 @@
         <aside id="layers-panel" class="panel">
             <div class="panel-header">
                 <h2>Layers</h2>
-                <span id="layer-count" class="badge">0</span>
+                <div style="display:flex;align-items:center;gap:6px">
+                    <button id="btn-extend-all" class="btn-extend-all" title="Extend all layers to match animation timeline" disabled>
+                        <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M2 7h10M2 7l2-2M2 7l2 2M12 7l-2-2M12 7l-2 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        Extend All
+                    </button>
+                    <span id="layer-count" class="badge">0</span>
+                </div>
             </div>
             <div id="layers-list" class="layers-list">
                 <div class="empty-state">

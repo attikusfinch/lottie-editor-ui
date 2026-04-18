@@ -4,7 +4,7 @@ import { state, initDom, dom } from './state.js';
 import { toast, saveSnapshot } from './utils.js';
 import { loadFile, mergeFile } from './file.js';
 import { renderPreview, initPlaybackControls, setUpdateSelectionBox } from './preview.js';
-import { buildLayersList, initDrag, updateSelectionBox, setInspectorCallbacks } from './layers.js';
+import { buildLayersList, initDrag, updateSelectionBox, setInspectorCallbacks, extendAllLayers } from './layers.js';
 import { renderInspector, renderActiveTab, initTabs } from './inspector.js';
 import { initExport } from './export.js';
 
@@ -80,3 +80,14 @@ initPlaybackControls();
 initTabs();
 initDrag();
 initExport();
+
+// ─── Extend All Layers ───
+dom.btnExtendAll.addEventListener('click', () => {
+    if (!state.lottieData) return;
+    extendAllLayers();
+});
+
+// Enable extend-all button when file is loaded
+setInterval(() => {
+    if (dom.btnExtendAll) dom.btnExtendAll.disabled = !state.lottieData;
+}, 500);

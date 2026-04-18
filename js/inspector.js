@@ -2,7 +2,7 @@
 
 import { state, dom, TYPE_NAMES } from './state.js';
 import {
-    escHtml, rgbToHex, hexToRgb, saveSnapshot,
+    escHtml, rgbToHex, hexToRgb, saveSnapshot, toast,
     getStaticOrFirstKeyframe, setStaticOrFirstKeyframe,
     getStaticOrFirstKeyframeScalar, setStaticOrFirstKeyframeScalar,
 } from './utils.js';
@@ -95,6 +95,29 @@ export function renderInspector() {
             </div>
         </div>`;
 
+    // Timing (ip / op)
+    const globalIp = state.lottieData.ip ?? 0;
+    const globalOp = state.lottieData.op ?? 60;
+    const layerIp = layer.ip ?? 0;
+    const layerOp = layer.op ?? 60;
+    const isFullRange = (layerIp <= globalIp && layerOp >= globalOp);
+    html += `
+        <div class="inspector-section">
+            <div class="inspector-section-title">Timing</div>
+            <div class="inspector-row">
+                <span class="inspector-label" style="min-width:30px">In</span>
+                <input type="number" class="inspector-input" id="inp-ip" value="${layerIp}" min="0" step="1">
+            </div>
+            <div class="inspector-row">
+                <span class="inspector-label" style="min-width:30px">Out</span>
+                <input type="number" class="inspector-input" id="inp-op" value="${layerOp}" min="0" step="1">
+            </div>
+            <button class="layer-extend-btn" id="btn-extend-full" ${isFullRange ? 'disabled' : ''} title="Extend layer to match animation range (${globalIp}–${globalOp})">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 7h10M2 7l2-2M2 7l2 2M12 7l-2-2M12 7l-2 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                ${isFullRange ? '✓ Full Range' : `Extend to Full (${globalIp}–${globalOp})`}
+            </button>
+        </div>`;
+
     // Drag hint
     if (ks && ks.p) {
         html += `<div class="inspector-section" style="margin-bottom:8px">
@@ -153,6 +176,33 @@ export function renderInspector() {
     // ─── Bind Events ───
     const inpName = document.getElementById('inp-name');
     if (inpName) inpName.addEventListener('change', () => { saveSnapshot(); layer.nm = inpName.value; buildLayersList(); });
+
+    // Timing (ip / op)
+    const inpIp = document.getElementById('inp-ip');
+    const inpOp = document.getElementById('inp-op');
+    if (inpIp && inpOp) {
+        const handleTiming = () => {
+            saveSnapshot();
+            layer.ip = parseInt(inpIp.value) || 0;
+            layer.op = parseInt(inpOp.value) || 60;
+            renderPreview();
+            buildLayersList();
+        };
+        inpIp.addEventListener('change', handleTiming);
+        inpOp.addEventListener('change', handleTiming);
+    }
+    const btnExtend = document.getElementById('btn-extend-full');
+    if (btnExtend) {
+        btnExtend.addEventListener('click', () => {
+            saveSnapshot();
+            layer.ip = state.lottieData.ip ?? 0;
+            layer.op = state.lottieData.op ?? 60;
+            renderPreview();
+            buildLayersList();
+            renderInspector();
+            toast(`Layer extended to ${layer.ip}–${layer.op}`, 'success');
+        });
+    }
 
     if (ks && ks.p) {
         const x = document.getElementById('inp-pos-x'), y = document.getElementById('inp-pos-y');
