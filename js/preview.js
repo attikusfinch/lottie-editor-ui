@@ -7,6 +7,12 @@ import { sanitizeLottieData } from './file.js';
 let updateSelectionBoxFn = null;
 export function setUpdateSelectionBox(fn) { updateSelectionBoxFn = fn; }
 
+let playheadFn = null;
+export function setPlayheadCallback(fn) { playheadFn = fn; }
+
+let rebuildTimelineFn = null;
+export function setRebuildTimelineCallback(fn) { rebuildTimelineFn = fn; }
+
 // ─── Main Render ───
 export function renderPreview() {
     if (state.anim) {
@@ -68,9 +74,13 @@ export function renderPreview() {
         dom.scrubber.value = cf;
         dom.frameLabel.textContent = `${cf} / ${Math.floor(totalFrames)}`;
         if (updateSelectionBoxFn) updateSelectionBoxFn();
+        if (playheadFn) playheadFn();
     });
 
-    requestAnimationFrame(() => { if (updateSelectionBoxFn) updateSelectionBoxFn(); });
+    requestAnimationFrame(() => {
+        if (updateSelectionBoxFn) updateSelectionBoxFn();
+        if (playheadFn) playheadFn();
+    });
 }
 
 // ─── Silent Re-render (during drag) ───
@@ -103,6 +113,7 @@ export function renderPreviewSilent() {
         const cf = Math.floor(state.anim.currentFrame);
         dom.scrubber.value = cf;
         dom.frameLabel.textContent = `${cf} / ${Math.floor(totalFrames)}`;
+        if (playheadFn) playheadFn();
     });
 }
 
@@ -188,6 +199,7 @@ export function initPlaybackControls() {
         state.lottieData.ip = inFrame;
         state.lottieData.op = outFrame;
         renderPreview();
+        if (rebuildTimelineFn) rebuildTimelineFn();
         toast(`Trimmed: ${inFrame} → ${outFrame} (${outFrame - inFrame} frames)`, 'success');
     });
 }

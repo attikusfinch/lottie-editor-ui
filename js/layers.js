@@ -4,10 +4,15 @@ import { renderPreview, renderPreviewSilent } from './preview.js';
 
 let renderInspectorFn = null;
 let renderActiveTabFn = null;
+let buildTimelineFn = null;
 
 export function setInspectorCallbacks(ri, rat) {
     renderInspectorFn = ri;
     renderActiveTabFn = rat;
+}
+
+export function setTimelineCallback(fn) {
+    buildTimelineFn = fn;
 }
 
 // ─── Extend All Layers to Full Animation Range ───
@@ -210,6 +215,8 @@ export function buildLayersList() {
 
     // Generate thumbnails after a short delay (animation must be rendered)
     requestAnimationFrame(() => requestAnimationFrame(() => renderLayerThumbnails()));
+
+    if (buildTimelineFn) buildTimelineFn();
 }
 
 // ─── Layer Thumbnails (rasterized to avoid ID conflicts) ───

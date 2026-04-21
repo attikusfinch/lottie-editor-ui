@@ -3,17 +3,23 @@
 import { state, initDom, dom } from './state.js';
 import { toast, saveSnapshot } from './utils.js';
 import { loadFile, mergeFile } from './file.js';
-import { renderPreview, initPlaybackControls, setUpdateSelectionBox } from './preview.js';
-import { buildLayersList, initDrag, updateSelectionBox, setInspectorCallbacks, extendAllLayers } from './layers.js';
+import { renderPreview, initPlaybackControls, setUpdateSelectionBox, setPlayheadCallback, setRebuildTimelineCallback } from './preview.js';
+import { buildLayersList, initDrag, updateSelectionBox, setInspectorCallbacks, setTimelineCallback, extendAllLayers, selectLayer } from './layers.js';
 import { renderInspector, renderActiveTab, initTabs } from './inspector.js';
 import { initExport } from './export.js';
+import { initTimelineDom, initTimeline, buildTimeline, updatePlayhead, setTimelineSelectCallback } from './timeline.js';
 
 // ─── Initialize ───
 initDom();
+initTimelineDom();
 
 // Wire callbacks to break circular deps
 setUpdateSelectionBox(updateSelectionBox);
 setInspectorCallbacks(renderInspector, renderActiveTab);
+setTimelineCallback(buildTimeline);
+setTimelineSelectCallback(selectLayer);
+setPlayheadCallback(updatePlayhead);
+setRebuildTimelineCallback(buildTimeline);
 
 // Action helpers that bind renderPreview/buildLayersList/renderInspector
 const actions = { renderPreview, buildLayersList, renderInspector };
@@ -80,6 +86,7 @@ initPlaybackControls();
 initTabs();
 initDrag();
 initExport();
+initTimeline();
 
 // ─── Extend All Layers ───
 dom.btnExtendAll.addEventListener('click', () => {

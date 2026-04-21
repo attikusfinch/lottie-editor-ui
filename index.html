@@ -130,6 +130,30 @@
                 <input type="number" id="trim-out" class="trim-input" value="0" min="0" step="1">
                 <button id="btn-trim-apply" class="trim-apply-btn" title="Apply trim">✂ Trim</button>
             </div>
+
+            <!-- Timeline (AE-style) -->
+            <div id="timeline-panel" class="timeline-panel hidden">
+                <div class="timeline-header">
+                    <button id="btn-timeline-toggle" class="timeline-toggle" title="Collapse / expand timeline">
+                        <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 4l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </button>
+                    <span class="timeline-title">Timeline</span>
+                    <span id="timeline-info" class="timeline-info"></span>
+                    <div class="timeline-zoom">
+                        <button id="tl-zoom-out" class="tl-zoom-btn" title="Zoom out">−</button>
+                        <button id="tl-zoom-fit" class="tl-zoom-btn" title="Fit to width">Fit</button>
+                        <button id="tl-zoom-in" class="tl-zoom-btn" title="Zoom in">+</button>
+                    </div>
+                </div>
+                <div id="timeline-body" class="timeline-body">
+                    <div id="timeline-names" class="timeline-names"></div>
+                    <div id="timeline-tracks-wrap" class="timeline-tracks-wrap">
+                        <div id="timeline-ruler" class="timeline-ruler"></div>
+                        <div id="timeline-tracks" class="timeline-tracks"></div>
+                        <div id="timeline-playhead" class="timeline-playhead"><div class="timeline-playhead-head"></div></div>
+                    </div>
+                </div>
+            </div>
         </section>
 
         <!-- Right panel: Inspector -->
