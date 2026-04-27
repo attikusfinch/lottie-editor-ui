@@ -7,6 +7,7 @@ import { renderPreview, initPlaybackControls, setUpdateSelectionBox, setPlayhead
 import { buildLayersList, initDrag, updateSelectionBox, setInspectorCallbacks, setTimelineCallback, extendAllLayers, selectLayer } from './layers.js';
 import { renderInspector, renderActiveTab, initTabs } from './inspector.js';
 import { initExport } from './export.js';
+import { initGifExport } from './gif.js';
 import { initTimelineDom, initTimeline, buildTimeline, updatePlayhead, setTimelineSelectCallback, setTimelineRebuildCallback, trimInToCTI, trimOutToCTI } from './timeline.js';
 
 // ─── Initialize ───
@@ -177,6 +178,7 @@ initPlaybackControls();
 initTabs();
 initDrag();
 initExport();
+initGifExport();
 initTimeline();
 
 // ─── Extend All Layers ───

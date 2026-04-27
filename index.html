@@ -74,6 +74,14 @@
                             <div class="export-menu-desc">Current frame as image</div>
                         </div>
                     </button>
+                    <div class="export-menu-divider"></div>
+                    <button class="export-menu-item" id="export-gif">
+                        <span class="export-icon">🎞</span>
+                        <div>
+                            <div class="export-menu-title">GIF</div>
+                            <div class="export-menu-desc">Animated GIF · choose bg & quality</div>
+                        </div>
+                    </button>
                 </div>
             </div>
         </div>
@@ -182,8 +190,74 @@
     <!-- Toast container -->
     <div id="toast-container"></div>
 
+    <!-- GIF Export Modal -->
+    <div id="gif-modal" class="modal-overlay hidden">
+        <div class="modal" role="dialog" aria-labelledby="gif-modal-title">
+            <div class="modal-header">
+                <h3 id="gif-modal-title">Export GIF</h3>
+                <button class="modal-close" id="gif-modal-close" aria-label="Close">
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="modal-row">
+                    <label class="modal-label">Background</label>
+                    <div class="bg-swatches" id="gif-bg-swatches">
+                        <button class="bg-swatch checker active" data-bg="transparent" title="Transparent"></button>
+                        <button class="bg-swatch" data-bg="#ffffff" style="background:#ffffff" title="White"></button>
+                        <button class="bg-swatch" data-bg="#000000" style="background:#000000" title="Black"></button>
+                        <button class="bg-swatch" data-bg="#0b0e17" style="background:#0b0e17" title="App dark"></button>
+                        <button class="bg-swatch" data-bg="#7c3aed" style="background:#7c3aed" title="Purple"></button>
+                        <label class="bg-swatch bg-swatch-custom" title="Custom color">
+                            <input type="color" id="gif-bg-custom" value="#22c55e">
+                            <span class="bg-swatch-custom-icon">+</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-row">
+                    <label class="modal-label">Quality</label>
+                    <div class="seg-control" data-name="quality">
+                        <button data-value="20">Low</button>
+                        <button data-value="10" class="active">Medium</button>
+                        <button data-value="1">High</button>
+                    </div>
+                </div>
+                <div class="modal-row">
+                    <label class="modal-label">Size</label>
+                    <div class="seg-control" data-name="scale">
+                        <button data-value="0.5">½×</button>
+                        <button data-value="1" class="active">1×</button>
+                        <button data-value="2">2×</button>
+                    </div>
+                </div>
+                <div class="modal-row">
+                    <label class="modal-label">FPS</label>
+                    <div class="seg-control" data-name="fps">
+                        <button data-value="15">15</button>
+                        <button data-value="24">24</button>
+                        <button data-value="30" class="active">30</button>
+                        <button data-value="60">60</button>
+                    </div>
+                </div>
+                <div class="modal-info" id="gif-info">— · — frames · —s</div>
+                <div class="modal-progress hidden" id="gif-progress-row">
+                    <div class="modal-progress-bar"><div class="modal-progress-fill" id="gif-progress-fill"></div></div>
+                    <span class="modal-progress-text" id="gif-progress-text">Preparing…</span>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="gif-modal-cancel" class="btn btn-secondary">Cancel</button>
+                <button id="gif-modal-go" class="btn btn-primary">
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 9v2a2 2 0 002 2h6a2 2 0 002-2V9M5 6l2 2 2-2M7 8V2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    Convert
+                </button>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.js"></script>
     <script type="module" src="js/app.js"></script>
 </body>
 </html>
