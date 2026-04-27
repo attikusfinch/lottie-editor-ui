@@ -5,6 +5,19 @@ import { toast, downloadBlob } from './utils.js';
 
 const WORKER_URL = 'https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.js';
 
+// gif.js spawns a Web Worker. Browsers refuse to construct workers from a
+// cross-origin URL even if CORS headers are present, so we fetch the script
+// text and build a same-origin Blob URL to use as workerScript.
+let cachedWorkerBlobUrl = null;
+async function getWorkerBlobUrl() {
+    if (cachedWorkerBlobUrl) return cachedWorkerBlobUrl;
+    const res = await fetch(WORKER_URL, { mode: 'cors' });
+    if (!res.ok) throw new Error(`worker fetch failed: ${res.status}`);
+    const text = await res.text();
+    cachedWorkerBlobUrl = URL.createObjectURL(new Blob([text], { type: 'application/javascript' }));
+    return cachedWorkerBlobUrl;
+}
+
 const settings = {
     background: 'transparent',
     quality: 10,
@@ -143,6 +156,19 @@ async function startEncoding() {
     m.cancel.textContent = 'Stop';
     setProgress(0, 'Preparing…');
 
+    // Resolve the worker script URL (same-origin Blob) once, before
+    // building the encoder. Cross-origin Worker construction is forbidden
+    // even when CORS headers are present, so we fetch the script and wrap
+    // it in a Blob URL.
+    let workerScript;
+    try {
+        workerScript = await getWorkerBlobUrl();
+    } catch (err) {
+        finishUI();
+        toast('Could not load gif.worker.js: ' + err.message, 'error');
+        return;
+    }
+
     const ip = state.lottieData.ip ?? 0;
     const op = state.lottieData.op ?? 60;
     const sourceFr = state.lottieData.fr ?? 30;
@@ -207,7 +233,7 @@ async function startEncoding() {
         quality: settings.quality,
         width: w,
         height: h,
-        workerScript: WORKER_URL,
+        workerScript,
         transparent: transparent ? 0xff00ff : null,
         background: bgColor,
         repeat: 0, // loop forever
