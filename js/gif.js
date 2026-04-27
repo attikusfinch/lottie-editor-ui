@@ -1,7 +1,7 @@
 /* GIF export — modal UI + offscreen lottie SVG → Image → canvas → gif.js */
 
 import { state, dom } from './state.js';
-import { toast, downloadBlob, hexToRgb } from './utils.js';
+import { toast, downloadBlob } from './utils.js';
 
 const WORKER_URL = 'https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.js';
 
@@ -20,7 +20,6 @@ async function getWorkerBlobUrl() {
 
 const settings = {
     background: 'transparent',
-    matte: '#ffffff',
     quality: 10,
     scale: 1,
     fps: 30,
@@ -39,9 +38,6 @@ function getModal() {
         go           : document.getElementById('gif-modal-go'),
         swatches     : document.getElementById('gif-bg-swatches'),
         custom       : document.getElementById('gif-bg-custom'),
-        matteRow     : document.getElementById('gif-matte-row'),
-        matteSwatches: document.getElementById('gif-matte-swatches'),
-        matteCustom  : document.getElementById('gif-matte-custom'),
         info         : document.getElementById('gif-info'),
         progressRow  : document.getElementById('gif-progress-row'),
         progressFill : document.getElementById('gif-progress-fill'),
@@ -80,35 +76,14 @@ export function initGifExport() {
         m.swatches.querySelectorAll('.bg-swatch').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         settings.background = btn.dataset.bg;
-        updateMatteVisibility();
         updateInfo();
     });
     m.custom.addEventListener('input', (e) => {
         m.swatches.querySelectorAll('.bg-swatch').forEach(b => b.classList.remove('active'));
         m.custom.parentElement.classList.add('active');
         settings.background = e.target.value;
-        updateMatteVisibility();
         updateInfo();
     });
-
-    // Matte swatches (only used when transparent)
-    if (m.matteSwatches) {
-        m.matteSwatches.addEventListener('click', (e) => {
-            const btn = e.target.closest('.bg-swatch');
-            if (!btn) return;
-            if (btn.classList.contains('bg-swatch-custom')) return;
-            m.matteSwatches.querySelectorAll('.bg-swatch').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            settings.matte = btn.dataset.matte;
-        });
-    }
-    if (m.matteCustom) {
-        m.matteCustom.addEventListener('input', (e) => {
-            m.matteSwatches.querySelectorAll('.bg-swatch').forEach(b => b.classList.remove('active'));
-            m.matteCustom.parentElement.classList.add('active');
-            settings.matte = e.target.value;
-        });
-    }
 
     // Segmented controls
     m.segControls.forEach(seg => {
@@ -128,12 +103,6 @@ export function initGifExport() {
     m.go.addEventListener('click', startEncoding);
 }
 
-function updateMatteVisibility() {
-    const m = getModal();
-    if (!m.matteRow) return;
-    m.matteRow.style.display = (settings.background === 'transparent') ? '' : 'none';
-}
-
 function openModal() {
     const m = getModal();
     m.overlay.classList.remove('hidden');
@@ -142,7 +111,6 @@ function openModal() {
     m.cancel.textContent = 'Cancel';
     busy = false;
     cancelRequested = false;
-    updateMatteVisibility();
     updateInfo();
 }
 
@@ -286,15 +254,8 @@ async function startEncoding() {
 
     // ── Setup GIF encoder ──
     const transparent = settings.background === 'transparent';
-    const matteHex = settings.matte || '#ffffff';
-    const matteN = hexToRgb(matteHex);
-    const matte = [
-        Math.round(matteN[0] * 255),
-        Math.round(matteN[1] * 255),
-        Math.round(matteN[2] * 255),
-    ];
     const KEY_R = 0xff, KEY_G = 0x00, KEY_B = 0xff;
-    const bgColor = transparent ? matteHex : settings.background;
+    const bgColor = transparent ? '#ffffff' : settings.background;
 
     const gif = new GIF({
         workers: 4,
@@ -342,33 +303,26 @@ async function startEncoding() {
                 URL.revokeObjectURL(blobUrl);
                 blobUrl = null;
 
-                // Threshold alpha to 1-bit and matte the visible pixels onto
-                // the chosen colour. This kills the magenta fringe that you
-                // get when the whole canvas is filled with the key colour
-                // before drawImage and anti-aliased edges blend with it.
+                // GIF only supports 1-bit alpha. Hard-cut at α = 128:
+                //   α <  128 → key colour (magenta) → transparent in GIF
+                //   α ≥ 128 → keep RGB as drawn, force opaque
+                // No matte blend — anti-aliased edges keep their faded RGB
+                // and just become slightly jagged, which is a far better
+                // tradeoff than tinted fringes from compositing onto a
+                // mystery colour.
                 const imageData = fctx.getImageData(0, 0, w, h);
                 const d = imageData.data;
-                const mr = matte[0], mg = matte[1], mb = matte[2];
                 for (let p = 0; p < d.length; p += 4) {
-                    const a = d[p + 3];
-                    if (a < 128) {
+                    if (d[p + 3] < 128) {
                         d[p]   = KEY_R;
                         d[p+1] = KEY_G;
                         d[p+2] = KEY_B;
-                        d[p+3] = 255;
-                    } else if (a < 255) {
-                        const af = a / 255;
-                        const inv = 1 - af;
-                        d[p]   = Math.round(d[p]   * af + mr * inv);
-                        d[p+1] = Math.round(d[p+1] * af + mg * inv);
-                        d[p+2] = Math.round(d[p+2] * af + mb * inv);
-                        d[p+3] = 255;
-                    }
-                    // Push real pixels off the key colour so they don't
-                    // become accidentally transparent.
-                    if (d[p+3] === 255 && d[p] === KEY_R && d[p+1] === KEY_G && d[p+2] === KEY_B) {
+                    } else if (d[p] === KEY_R && d[p+1] === KEY_G && d[p+2] === KEY_B) {
+                        // Real pixel that happens to be pure magenta: nudge
+                        // so it isn't accidentally keyed out.
                         d[p+2] = 0xfe;
                     }
+                    d[p+3] = 255;
                 }
                 fctx.putImageData(imageData, 0, 0);
             } else {
