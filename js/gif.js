@@ -1,7 +1,7 @@
-/* GIF export — modal UI + offscreen lottie canvas → gif.js encoder */
+/* GIF export — modal UI + offscreen lottie SVG → Image → canvas → gif.js */
 
 import { state, dom } from './state.js';
-import { toast, downloadBlob } from './utils.js';
+import { toast, downloadBlob, hexToRgb } from './utils.js';
 
 const WORKER_URL = 'https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.js';
 
@@ -20,6 +20,7 @@ async function getWorkerBlobUrl() {
 
 const settings = {
     background: 'transparent',
+    matte: '#ffffff',
     quality: 10,
     scale: 1,
     fps: 30,
@@ -32,17 +33,20 @@ let busy = false;
 function getModal() {
     if (modalDom) return modalDom;
     modalDom = {
-        overlay   : document.getElementById('gif-modal'),
-        close     : document.getElementById('gif-modal-close'),
-        cancel    : document.getElementById('gif-modal-cancel'),
-        go        : document.getElementById('gif-modal-go'),
-        swatches  : document.getElementById('gif-bg-swatches'),
-        custom    : document.getElementById('gif-bg-custom'),
-        info      : document.getElementById('gif-info'),
-        progressRow : document.getElementById('gif-progress-row'),
-        progressFill: document.getElementById('gif-progress-fill'),
-        progressText: document.getElementById('gif-progress-text'),
-        segControls : document.querySelectorAll('#gif-modal .seg-control'),
+        overlay      : document.getElementById('gif-modal'),
+        close        : document.getElementById('gif-modal-close'),
+        cancel       : document.getElementById('gif-modal-cancel'),
+        go           : document.getElementById('gif-modal-go'),
+        swatches     : document.getElementById('gif-bg-swatches'),
+        custom       : document.getElementById('gif-bg-custom'),
+        matteRow     : document.getElementById('gif-matte-row'),
+        matteSwatches: document.getElementById('gif-matte-swatches'),
+        matteCustom  : document.getElementById('gif-matte-custom'),
+        info         : document.getElementById('gif-info'),
+        progressRow  : document.getElementById('gif-progress-row'),
+        progressFill : document.getElementById('gif-progress-fill'),
+        progressText : document.getElementById('gif-progress-text'),
+        segControls  : document.querySelectorAll('#gif-modal .seg-control'),
     };
     return modalDom;
 }
@@ -76,14 +80,35 @@ export function initGifExport() {
         m.swatches.querySelectorAll('.bg-swatch').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         settings.background = btn.dataset.bg;
+        updateMatteVisibility();
         updateInfo();
     });
     m.custom.addEventListener('input', (e) => {
         m.swatches.querySelectorAll('.bg-swatch').forEach(b => b.classList.remove('active'));
         m.custom.parentElement.classList.add('active');
         settings.background = e.target.value;
+        updateMatteVisibility();
         updateInfo();
     });
+
+    // Matte swatches (only used when transparent)
+    if (m.matteSwatches) {
+        m.matteSwatches.addEventListener('click', (e) => {
+            const btn = e.target.closest('.bg-swatch');
+            if (!btn) return;
+            if (btn.classList.contains('bg-swatch-custom')) return;
+            m.matteSwatches.querySelectorAll('.bg-swatch').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            settings.matte = btn.dataset.matte;
+        });
+    }
+    if (m.matteCustom) {
+        m.matteCustom.addEventListener('input', (e) => {
+            m.matteSwatches.querySelectorAll('.bg-swatch').forEach(b => b.classList.remove('active'));
+            m.matteCustom.parentElement.classList.add('active');
+            settings.matte = e.target.value;
+        });
+    }
 
     // Segmented controls
     m.segControls.forEach(seg => {
@@ -103,6 +128,12 @@ export function initGifExport() {
     m.go.addEventListener('click', startEncoding);
 }
 
+function updateMatteVisibility() {
+    const m = getModal();
+    if (!m.matteRow) return;
+    m.matteRow.style.display = (settings.background === 'transparent') ? '' : 'none';
+}
+
 function openModal() {
     const m = getModal();
     m.overlay.classList.remove('hidden');
@@ -111,6 +142,7 @@ function openModal() {
     m.cancel.textContent = 'Cancel';
     busy = false;
     cancelRequested = false;
+    updateMatteVisibility();
     updateInfo();
 }
 
@@ -140,6 +172,37 @@ function setProgress(p, text) {
     if (text) m.progressText.textContent = text;
 }
 
+// ─── SVG → Image → canvas pipeline ───
+// Using the SVG renderer preserves gradients, masks, and effects which the
+// canvas renderer often quantizes incorrectly. We serialize each frame's SVG
+// into a Blob, decode it via an Image, then draw it onto the frame canvas.
+function svgToBlobUrl(svgEl, srcW, srcH) {
+    const clone = svgEl.cloneNode(true);
+    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+    clone.setAttribute('width', srcW);
+    clone.setAttribute('height', srcH);
+    if (!clone.getAttribute('viewBox')) {
+        clone.setAttribute('viewBox', `0 0 ${srcW} ${srcH}`);
+    }
+    const svgString = '<?xml version="1.0" encoding="UTF-8"?>\n' + new XMLSerializer().serializeToString(clone);
+    return URL.createObjectURL(new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' }));
+}
+
+async function loadImage(url) {
+    const img = new Image();
+    img.decoding = 'sync';
+    img.src = url;
+    if (img.decode) {
+        try { await img.decode(); return img; } catch (_) {}
+    }
+    return new Promise((res, rej) => {
+        if (img.complete && img.naturalWidth) return res(img);
+        img.onload = () => res(img);
+        img.onerror = (e) => rej(new Error('image decode failed'));
+    });
+}
+
 async function startEncoding() {
     if (busy) return;
     if (!state.lottieData) { toast('No animation loaded', 'error'); return; }
@@ -156,10 +219,6 @@ async function startEncoding() {
     m.cancel.textContent = 'Stop';
     setProgress(0, 'Preparing…');
 
-    // Resolve the worker script URL (same-origin Blob) once, before
-    // building the encoder. Cross-origin Worker construction is forbidden
-    // even when CORS headers are present, so we fetch the script and wrap
-    // it in a Blob URL.
     let workerScript;
     try {
         workerScript = await getWorkerBlobUrl();
@@ -176,13 +235,15 @@ async function startEncoding() {
     const seconds = totalSrc / sourceFr;
     const targetFps = Math.min(settings.fps, sourceFr);
     const outFrames = Math.max(1, Math.round(seconds * targetFps));
-    const w = Math.max(1, Math.round((state.lottieData.w || 512) * settings.scale));
-    const h = Math.max(1, Math.round((state.lottieData.h || 512) * settings.scale));
+    const srcW = state.lottieData.w || 512;
+    const srcH = state.lottieData.h || 512;
+    const w = Math.max(1, Math.round(srcW * settings.scale));
+    const h = Math.max(1, Math.round(srcH * settings.scale));
     const delay = Math.round(1000 / targetFps);
 
-    // ── Build offscreen canvas-renderer animation ──
+    // ── Build offscreen SVG-renderer animation ──
     const offscreenContainer = document.createElement('div');
-    offscreenContainer.style.cssText = `position:fixed; left:-99999px; top:-99999px; width:${w}px; height:${h}px; pointer-events:none; opacity:0;`;
+    offscreenContainer.style.cssText = `position:fixed; left:-99999px; top:-99999px; width:${srcW}px; height:${srcH}px; pointer-events:none; opacity:0;`;
     document.body.appendChild(offscreenContainer);
 
     const animDataClone = JSON.parse(JSON.stringify(state.lottieData));
@@ -190,13 +251,14 @@ async function startEncoding() {
     try {
         offAnim = lottie.loadAnimation({
             container: offscreenContainer,
-            renderer: 'canvas',
+            renderer: 'svg',
             loop: false,
             autoplay: false,
             animationData: animDataClone,
             rendererSettings: {
-                clearCanvas: true,
                 preserveAspectRatio: 'xMidYMid meet',
+                progressiveLoad: false,
+                hideOnTransparent: true,
             },
         });
     } catch (err) {
@@ -209,24 +271,30 @@ async function startEncoding() {
     await new Promise((res) => {
         if (offAnim.isLoaded) return res();
         offAnim.addEventListener('DOMLoaded', res);
-        setTimeout(res, 1500); // safety
+        setTimeout(res, 1500);
     });
 
-    // Force the canvas size to scaled dimensions
-    const lottieCanvas = offscreenContainer.querySelector('canvas');
-    if (lottieCanvas) {
-        lottieCanvas.width = w;
-        lottieCanvas.height = h;
-        lottieCanvas.style.width = w + 'px';
-        lottieCanvas.style.height = h + 'px';
-        offAnim.resize();
+    const offSvg = offscreenContainer.querySelector('svg');
+    if (!offSvg) {
+        cleanup(offscreenContainer, offAnim);
+        toast('Offscreen SVG not produced by lottie', 'error');
+        finishUI();
+        return;
     }
+    offSvg.setAttribute('width', srcW);
+    offSvg.setAttribute('height', srcH);
 
     // ── Setup GIF encoder ──
     const transparent = settings.background === 'transparent';
-    // Use a sentinel color unlikely to appear in animation (bright magenta) for transparent matte
-    const TRANSPARENT_KEY = '#ff00ff';
-    const bgColor = transparent ? TRANSPARENT_KEY : settings.background;
+    const matteHex = settings.matte || '#ffffff';
+    const matteN = hexToRgb(matteHex);
+    const matte = [
+        Math.round(matteN[0] * 255),
+        Math.round(matteN[1] * 255),
+        Math.round(matteN[2] * 255),
+    ];
+    const KEY_R = 0xff, KEY_G = 0x00, KEY_B = 0xff;
+    const bgColor = transparent ? matteHex : settings.background;
 
     const gif = new GIF({
         workers: 4,
@@ -236,40 +304,92 @@ async function startEncoding() {
         workerScript,
         transparent: transparent ? 0xff00ff : null,
         background: bgColor,
-        repeat: 0, // loop forever
+        repeat: 0,
     });
 
     const frameCanvas = document.createElement('canvas');
     frameCanvas.width = w;
     frameCanvas.height = h;
-    const fctx = frameCanvas.getContext('2d');
+    const fctx = frameCanvas.getContext('2d', { willReadFrequently: transparent });
+    fctx.imageSmoothingEnabled = true;
+    fctx.imageSmoothingQuality = 'high';
 
     // ── Frame loop ──
-    // lottie's goToAndStop(value, true) renders synchronously, so we don't
-    // need to wait for rAF — and shouldn't, because background tabs throttle
-    // it heavily, which would stall the export.
     setProgress(0, `Rendering 0 / ${outFrames}`);
-    for (let i = 0; i < outFrames; i++) {
-        if (cancelRequested) break;
-        const tNorm = (outFrames === 1) ? 0 : (i / (outFrames - 1));
-        const srcFrame = tNorm * (totalSrc - 1);
-        offAnim.goToAndStop(srcFrame, true);
+    let blobUrl = null;
+    try {
+        for (let i = 0; i < outFrames; i++) {
+            if (cancelRequested) break;
 
-        // Composite onto bg canvas
-        fctx.save();
-        fctx.globalCompositeOperation = 'source-over';
-        fctx.fillStyle = bgColor;
-        fctx.fillRect(0, 0, w, h);
-        if (lottieCanvas) {
-            try { fctx.drawImage(lottieCanvas, 0, 0, w, h); } catch (_) {}
+            const tNorm = (outFrames === 1) ? 0 : (i / (outFrames - 1));
+            const srcFrame = tNorm * (totalSrc - 1);
+            offAnim.goToAndStop(srcFrame, true);
+
+            // Serialize the freshly-rendered SVG and decode into an Image.
+            blobUrl = svgToBlobUrl(offSvg, srcW, srcH);
+            let img;
+            try {
+                img = await loadImage(blobUrl);
+            } catch (err) {
+                URL.revokeObjectURL(blobUrl);
+                blobUrl = null;
+                throw err;
+            }
+
+            if (transparent) {
+                fctx.clearRect(0, 0, w, h);
+                fctx.drawImage(img, 0, 0, w, h);
+                URL.revokeObjectURL(blobUrl);
+                blobUrl = null;
+
+                // Threshold alpha to 1-bit and matte the visible pixels onto
+                // the chosen colour. This kills the magenta fringe that you
+                // get when the whole canvas is filled with the key colour
+                // before drawImage and anti-aliased edges blend with it.
+                const imageData = fctx.getImageData(0, 0, w, h);
+                const d = imageData.data;
+                const mr = matte[0], mg = matte[1], mb = matte[2];
+                for (let p = 0; p < d.length; p += 4) {
+                    const a = d[p + 3];
+                    if (a < 128) {
+                        d[p]   = KEY_R;
+                        d[p+1] = KEY_G;
+                        d[p+2] = KEY_B;
+                        d[p+3] = 255;
+                    } else if (a < 255) {
+                        const af = a / 255;
+                        const inv = 1 - af;
+                        d[p]   = Math.round(d[p]   * af + mr * inv);
+                        d[p+1] = Math.round(d[p+1] * af + mg * inv);
+                        d[p+2] = Math.round(d[p+2] * af + mb * inv);
+                        d[p+3] = 255;
+                    }
+                    // Push real pixels off the key colour so they don't
+                    // become accidentally transparent.
+                    if (d[p+3] === 255 && d[p] === KEY_R && d[p+1] === KEY_G && d[p+2] === KEY_B) {
+                        d[p+2] = 0xfe;
+                    }
+                }
+                fctx.putImageData(imageData, 0, 0);
+            } else {
+                fctx.fillStyle = bgColor;
+                fctx.fillRect(0, 0, w, h);
+                fctx.drawImage(img, 0, 0, w, h);
+                URL.revokeObjectURL(blobUrl);
+                blobUrl = null;
+            }
+
+            gif.addFrame(frameCanvas, { delay, copy: true });
+            setProgress(0.5 * (i + 1) / outFrames, `Rendering ${i + 1} / ${outFrames}`);
+
+            if (i % 4 === 0) await new Promise((r) => setTimeout(r, 0));
         }
-        fctx.restore();
-
-        gif.addFrame(frameCanvas, { delay, copy: true });
-        setProgress(0.5 * (i + 1) / outFrames, `Rendering ${i + 1} / ${outFrames}`);
-
-        // Yield to UI so progress + cancel can update
-        if (i % 4 === 0) await new Promise((r) => setTimeout(r, 0));
+    } catch (err) {
+        if (blobUrl) URL.revokeObjectURL(blobUrl);
+        cleanup(offscreenContainer, offAnim);
+        finishUI();
+        toast('Render error: ' + err.message, 'error');
+        return;
     }
 
     if (cancelRequested) {
