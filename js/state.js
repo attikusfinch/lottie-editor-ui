@@ -55,6 +55,7 @@ export function initDom() {
     dom.btnLoop          = document.getElementById('btn-loop');
     dom.exportDropdown   = document.getElementById('export-dropdown');
     dom.mergeInput       = document.getElementById('merge-input');
+    dom.btnTextOverlay   = document.getElementById('btn-text-overlay');
     dom.btnUndo          = document.getElementById('btn-undo');
     dom.trimControls     = document.getElementById('trim-controls');
     dom.trimIn           = document.getElementById('trim-in');

@@ -8,6 +8,7 @@ import { buildLayersList, initDrag, updateSelectionBox, setInspectorCallbacks, s
 import { renderInspector, renderActiveTab, initTabs } from './inspector.js';
 import { initExport } from './export.js';
 import { initGifExport } from './gif.js';
+import { initTextOverlay } from './text.js';
 import { initTimelineDom, initTimeline, buildTimeline, updatePlayhead, setTimelineSelectCallback, setTimelineRebuildCallback, trimInToCTI, trimOutToCTI } from './timeline.js';
 
 // ─── Initialize ───
@@ -24,7 +25,7 @@ setPlayheadCallback(updatePlayhead);
 setRebuildTimelineCallback(buildTimeline);
 
 // Action helpers that bind renderPreview/buildLayersList/renderInspector
-const actions = { renderPreview, buildLayersList, renderInspector };
+const actions = { renderPreview, buildLayersList, renderInspector, selectLayer };
 const loadActions = { ...actions, loadFile: (f) => loadFile(f, actions) };
 
 // ─── File Input ───
@@ -179,6 +180,7 @@ initTabs();
 initDrag();
 initExport();
 initGifExport();
+initTextOverlay(actions);
 initTimeline();
 
 // ─── Extend All Layers ───
