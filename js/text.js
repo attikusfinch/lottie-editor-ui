@@ -38,11 +38,14 @@ let selectedOverlayLayer = null;
 let previewSvg = null;
 let hiddenEditElement = null;
 let hiddenEditVisibility = '';
+let isTextPanelOpen = false;
+let previousTab = 'colors';
 
 function getModal() {
     if (modalDom) return modalDom;
     modalDom = {
         overlay: document.getElementById('text-modal'),
+        panel: document.querySelector('#text-modal .text-modal'),
         close: document.getElementById('text-modal-close'),
         cancel: document.getElementById('text-modal-cancel'),
         go: document.getElementById('text-modal-go'),
@@ -76,12 +79,12 @@ export function initTextOverlay(actionFns) {
     dom.btnTextOverlay.addEventListener('click', openModal);
     m.close.addEventListener('click', closeModal);
     m.cancel.addEventListener('click', closeModal);
-    m.overlay.addEventListener('click', (e) => {
-        if (e.target === m.overlay) closeModal();
-    });
     document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && !m.overlay.classList.contains('hidden')) closeModal();
+        if (e.key === 'Escape' && isTextPanelOpen) closeModal();
     });
+    document.addEventListener('click', (e) => {
+        if (isTextPanelOpen && e.target.closest('#layers-list .layer-item')) closeModal();
+    }, true);
 
     m.fontInput.addEventListener('change', loadFont);
     m.go.addEventListener('click', commitOverlay);
@@ -143,10 +146,10 @@ function openModal() {
         settings.y = Math.round((state.lottieData.h || 512) / 2);
     }
 
+    mountTextPanel();
     writeSettingsToForm();
     updateModalState();
     updateTextPreview();
-    getModal().overlay.classList.remove('hidden');
 }
 
 function getTextOverlaySettings(layer) {
@@ -209,7 +212,37 @@ function findFirstGradientFill(items) {
 function closeModal() {
     removeTextPreview();
     restoreEditLayerVisibility();
-    getModal().overlay.classList.add('hidden');
+    unmountTextPanel(true);
+}
+
+function mountTextPanel() {
+    const m = getModal();
+    previousTab = state.currentTab || 'colors';
+    isTextPanelOpen = true;
+    m.overlay.classList.add('hidden');
+    m.panel.classList.add('text-panel');
+    document.querySelector('.inspector-tabs')?.classList.add('hidden');
+    dom.inspectorContent.classList.add('text-panel-host');
+    dom.inspectorContent.replaceChildren(m.panel);
+}
+
+function unmountTextPanel(restorePreviousTab) {
+    if (!isTextPanelOpen) return;
+    const m = getModal();
+    isTextPanelOpen = false;
+    m.panel.classList.remove('text-panel');
+    m.overlay.appendChild(m.panel);
+    m.overlay.classList.add('hidden');
+    dom.inspectorContent.classList.remove('text-panel-host');
+    document.querySelector('.inspector-tabs')?.classList.remove('hidden');
+
+    if (restorePreviousTab) {
+        state.currentTab = previousTab;
+        document.querySelectorAll('.inspector-tab').forEach(tab => {
+            tab.classList.toggle('active', tab.dataset.tab === state.currentTab);
+        });
+        if (actions.renderActiveTab) actions.renderActiveTab();
+    }
 }
 
 async function loadFont(e) {
@@ -511,7 +544,9 @@ function commitOverlay() {
         toast('Text overlay added on top', 'success');
     }
 
-    closeModal();
+    removeTextPreview();
+    restoreEditLayerVisibility();
+    unmountTextPanel(false);
     renderPreview();
     actions.buildLayersList();
     if (actions.renderInspector) actions.renderInspector();

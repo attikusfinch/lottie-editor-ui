@@ -25,7 +25,7 @@ setPlayheadCallback(updatePlayhead);
 setRebuildTimelineCallback(buildTimeline);
 
 // Action helpers that bind renderPreview/buildLayersList/renderInspector
-const actions = { renderPreview, buildLayersList, renderInspector, selectLayer };
+const actions = { renderPreview, buildLayersList, renderInspector, renderActiveTab, selectLayer };
 const loadActions = { ...actions, loadFile: (f) => loadFile(f, actions) };
 
 // ─── File Input ───

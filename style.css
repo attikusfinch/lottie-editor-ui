@@ -1875,6 +1875,59 @@ body.drag-over .preview-container {
     pointer-events: auto;
 }
 
+.inspector-content.text-panel-host {
+    padding: 0;
+    overflow: hidden;
+}
+
+.text-panel {
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    max-height: none;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    animation: none;
+}
+
+.text-panel .modal-header {
+    padding: 14px 16px;
+}
+
+.text-panel .modal-body {
+    flex: 1;
+    min-height: 0;
+    padding: 12px;
+}
+
+.text-panel .modal-footer {
+    padding: 12px;
+}
+
+.text-panel .text-modal-row {
+    display: block;
+}
+
+.text-panel .modal-label {
+    display: block;
+    width: auto;
+    padding-top: 0;
+    margin-bottom: 6px;
+}
+
+.text-panel .text-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.text-panel .text-gradient-controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-left: 0;
+}
+
 .text-modal-row {
     align-items: flex-start;
 }
