@@ -84,7 +84,7 @@ export function renderPreview() {
 }
 
 // ─── Silent Re-render (during drag) ───
-export function renderPreviewSilent() {
+export function renderPreviewSilent({ stopPlayback = false } = {}) {
     if (!state.anim || !state.lottieData) return;
     const currentFrame = state.anim.currentFrame;
     state.anim.destroy();
@@ -107,12 +107,26 @@ export function renderPreviewSilent() {
     }
 
     state.anim.goToAndStop(currentFrame, true);
+    if (stopPlayback) {
+        state.isPlaying = false;
+        updatePlayPauseIcon();
+    }
 
     const totalFrames = state.anim.totalFrames || 0;
+    const cf = Math.floor(currentFrame);
+    dom.scrubber.max = Math.floor(totalFrames);
+    dom.scrubber.value = cf;
+    dom.frameLabel.textContent = `${cf} / ${Math.floor(totalFrames)}`;
+
     state.anim.addEventListener('enterFrame', () => {
         const cf = Math.floor(state.anim.currentFrame);
         dom.scrubber.value = cf;
         dom.frameLabel.textContent = `${cf} / ${Math.floor(totalFrames)}`;
+        if (playheadFn) playheadFn();
+    });
+
+    requestAnimationFrame(() => {
+        if (updateSelectionBoxFn) updateSelectionBoxFn();
         if (playheadFn) playheadFn();
     });
 }

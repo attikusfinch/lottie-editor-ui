@@ -6,7 +6,7 @@ import {
     getStaticOrFirstKeyframe, setStaticOrFirstKeyframe,
     getStaticOrFirstKeyframeScalar, setStaticOrFirstKeyframeScalar,
 } from './utils.js';
-import { renderPreview } from './preview.js';
+import { renderPreview, renderPreviewSilent } from './preview.js';
 import { buildLayersList, updateSelectionBox } from './layers.js';
 import { renderGlobalColorPalette, renderAdjustPanel, extractColors } from './colors.js';
 
@@ -230,7 +230,7 @@ export function renderInspector() {
             c.setter(hexToRgb(e.target.value));
             const sw = e.target.previousElementSibling; if (sw) sw.style.background = e.target.value;
             const hl = e.target.closest('.color-row').querySelector('.color-hex'); if (hl) hl.textContent = e.target.value;
-            renderPreview();
+            renderPreviewSilent({ stopPlayback: true });
         });
         inp.addEventListener('change', () => { saved = false; });
     });

@@ -558,6 +558,17 @@ body {
     max-height: 100%;
 }
 
+.text-preview-overlay {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    max-width: none !important;
+    max-height: none !important;
+    pointer-events: none;
+    z-index: 8;
+}
+
 /* Additional corner markers (top-right, bottom-left) via wrapper pseudo-elements */
 #preview-container .frame-corner-tr,
 #preview-container .frame-corner-bl {
@@ -1849,8 +1860,19 @@ body.drag-over .preview-container {
 
 /* ===================== TEXT OVERLAY ===================== */
 
+#text-modal.modal-overlay {
+    align-items: flex-start;
+    justify-content: flex-end;
+    padding: 72px 300px 20px 20px;
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    pointer-events: none;
+}
+
 .text-modal {
-    width: 500px;
+    width: 460px;
+    pointer-events: auto;
 }
 
 .text-modal-row {
@@ -1930,6 +1952,13 @@ body.drag-over .preview-container {
     margin-bottom: 14px;
 }
 
+.text-gradient-controls {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin: -2px 0 14px 84px;
+}
+
 .text-field {
     min-width: 0;
 }
@@ -1981,6 +2010,17 @@ body.drag-over .preview-container {
 @media (max-width: 560px) {
     .text-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .text-gradient-controls {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        margin-left: 0;
+    }
+}
+
+@media (max-width: 1200px) {
+    #text-modal.modal-overlay {
+        padding-right: 20px;
     }
 }
 

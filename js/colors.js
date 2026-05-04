@@ -2,7 +2,7 @@
 
 import { state, dom } from './state.js';
 import { rgbToHex, hexToRgb, hexToRgbNorm, rgbToHsl, hslToRgb, saveSnapshot, escHtml } from './utils.js';
-import { renderPreview } from './preview.js';
+import { renderPreviewSilent } from './preview.js';
 
 // ─── Color Extraction ───
 
@@ -185,7 +185,7 @@ export function renderGlobalColorPalette() {
             const hexLabel = e.target.closest('.color-row').querySelector('.color-hex');
             if (hexLabel) hexLabel.textContent = e.target.value;
             group.hex = e.target.value;
-            renderPreview();
+            renderPreviewSilent({ stopPlayback: true });
         });
         inp.addEventListener('change', () => { snapshotSaved = false; });
     });
@@ -312,7 +312,7 @@ export function renderAdjustPanel() {
         sV.textContent = state.savedAdjust.sat + '%';
         lV.textContent = state.savedAdjust.light + '%';
         applyAllAdjustments();
-        renderPreview();
+        renderPreviewSilent({ stopPlayback: true });
     }
 
     hS.addEventListener('input', doAdjust);
@@ -343,7 +343,7 @@ export function renderAdjustPanel() {
             const valSpan = sl.nextElementSibling;
             if (valSpan) valSpan.textContent = sl.value + (axis === 'hue' ? '°' : '%');
             applyAllAdjustments();
-            renderPreview();
+            renderPreviewSilent({ stopPlayback: true });
         });
     });
 }

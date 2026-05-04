@@ -24,13 +24,20 @@ const settings = {
     x: null,
     y: null,
     rotation: 0,
+    fillType: 'solid',
     color: '#ffffff',
+    gradientFrom: '#ffffff',
+    gradientTo: '#7c3aed',
+    gradientAngle: 0,
     align: 'center',
 };
 
 let modalDom = null;
 let actions = null;
 let selectedOverlayLayer = null;
+let previewSvg = null;
+let hiddenEditElement = null;
+let hiddenEditVisibility = '';
 
 function getModal() {
     if (modalDom) return modalDom;
@@ -49,7 +56,13 @@ function getModal() {
         x: document.getElementById('text-pos-x'),
         y: document.getElementById('text-pos-y'),
         rotation: document.getElementById('text-rotation'),
+        fillMode: document.getElementById('text-fill-control'),
         color: document.getElementById('text-color'),
+        colorField: document.querySelector('.text-color-field'),
+        gradientControls: document.getElementById('text-gradient-controls'),
+        gradientFrom: document.getElementById('text-gradient-from'),
+        gradientTo: document.getElementById('text-gradient-to'),
+        gradientAngle: document.getElementById('text-gradient-angle'),
         align: document.getElementById('text-align-control'),
         info: document.getElementById('text-overlay-info'),
     };
@@ -73,12 +86,27 @@ export function initTextOverlay(actionFns) {
     m.fontInput.addEventListener('change', loadFont);
     m.go.addEventListener('click', commitOverlay);
 
-    for (const input of [m.text, m.fontSize, m.lineHeight, m.letterSpacing, m.opacity, m.x, m.y, m.rotation, m.color]) {
+    for (const input of [
+        m.text, m.fontSize, m.lineHeight, m.letterSpacing, m.opacity, m.x, m.y, m.rotation,
+        m.color, m.gradientFrom, m.gradientTo, m.gradientAngle,
+    ]) {
         input.addEventListener('input', () => {
             readSettingsFromForm();
             updateModalState();
+            updateTextPreview();
         });
     }
+
+    m.fillMode.addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-value]');
+        if (!btn) return;
+        m.fillMode.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        settings.fillType = btn.dataset.value;
+        updateFillControls();
+        updateModalState();
+        updateTextPreview();
+    });
 
     m.align.addEventListener('click', (e) => {
         const btn = e.target.closest('button[data-value]');
@@ -87,6 +115,7 @@ export function initTextOverlay(actionFns) {
         btn.classList.add('active');
         settings.align = btn.dataset.value;
         updateModalState();
+        updateTextPreview();
     });
 
     setInterval(() => {
@@ -105,15 +134,18 @@ function openModal() {
         const metadata = getTextOverlaySettings(selectedOverlayLayer);
         const keepLoadedFont = settings.font && settings.fontName === metadata.fontName;
         Object.assign(settings, metadata);
+        settings.fillType = settings.fillType || 'solid';
         if (!keepLoadedFont) settings.font = null;
     } else {
         settings.text = settings.text || DEFAULT_TEXT;
+        settings.fillType = settings.fillType || 'solid';
         settings.x = Math.round((state.lottieData.w || 512) / 2);
         settings.y = Math.round((state.lottieData.h || 512) / 2);
     }
 
     writeSettingsToForm();
     updateModalState();
+    updateTextPreview();
     getModal().overlay.classList.remove('hidden');
 }
 
@@ -129,8 +161,17 @@ function getTextOverlaySettings(layer) {
         if (layer.ks.o) metadata.opacity = getStaticOrFirstKeyframeScalar(layer.ks.o);
     }
 
-    const fill = findFirstFillColor(layer.shapes);
-    if (fill) metadata.color = rgbToHex(fill[0], fill[1], fill[2]);
+    const gradient = findFirstGradientFill(layer.shapes);
+    if (gradient) {
+        metadata.fillType = 'gradient';
+        metadata.gradientFrom = gradient.from;
+        metadata.gradientTo = gradient.to;
+        metadata.gradientAngle = gradient.angle;
+    } else {
+        const fill = findFirstFillColor(layer.shapes);
+        if (fill) metadata.color = rgbToHex(fill[0], fill[1], fill[2]);
+        metadata.fillType = metadata.fillType || 'solid';
+    }
     return metadata;
 }
 
@@ -144,7 +185,30 @@ function findFirstFillColor(items) {
     return null;
 }
 
+function findFirstGradientFill(items) {
+    if (!Array.isArray(items)) return null;
+    for (const item of items) {
+        if (item.ty === 'gf' && item.g && item.g.k && Array.isArray(item.g.k.k)) {
+            const data = item.g.k.k;
+            const stops = Math.max(2, item.g.p || Math.floor(data.length / 4));
+            const lastBase = (stops - 1) * 4;
+            const s = item.s && Array.isArray(item.s.k) ? item.s.k : [0, 0];
+            const e = item.e && Array.isArray(item.e.k) ? item.e.k : [1, 0];
+            return {
+                from: rgbToHex(data[1] ?? 1, data[2] ?? 1, data[3] ?? 1),
+                to: rgbToHex(data[lastBase + 1] ?? 1, data[lastBase + 2] ?? 1, data[lastBase + 3] ?? 1),
+                angle: Math.round(Math.atan2((e[1] ?? 0) - (s[1] ?? 0), (e[0] ?? 1) - (s[0] ?? 0)) * 180 / Math.PI),
+            };
+        }
+        const child = findFirstGradientFill(item.it);
+        if (child) return child;
+    }
+    return null;
+}
+
 function closeModal() {
+    removeTextPreview();
+    restoreEditLayerVisibility();
     getModal().overlay.classList.add('hidden');
 }
 
@@ -166,12 +230,14 @@ async function loadFont(e) {
         m.fontName.textContent = settings.fontName;
         m.info.textContent = 'Font loaded';
         updateModalState();
+        updateTextPreview();
         toast(`Font loaded: ${settings.fontName}`, 'success');
     } catch (err) {
         settings.font = null;
         settings.fontName = '';
         getModal().fontName.textContent = 'No font';
         updateModalState();
+        updateTextPreview();
         toast('Font parse failed. Use TTF, OTF, or WOFF.', 'error');
         console.error('Font parse failed:', err);
     } finally {
@@ -205,6 +271,9 @@ function readSettingsFromForm() {
     settings.y = clampNumber(m.y.value, -100000, 100000, Math.round((state.lottieData.h || 512) / 2));
     settings.rotation = clampNumber(m.rotation.value, -36000, 36000, 0);
     settings.color = m.color.value || '#ffffff';
+    settings.gradientFrom = m.gradientFrom.value || settings.color || '#ffffff';
+    settings.gradientTo = m.gradientTo.value || '#7c3aed';
+    settings.gradientAngle = clampNumber(m.gradientAngle.value, -36000, 36000, 0);
 }
 
 function writeSettingsToForm() {
@@ -219,15 +288,23 @@ function writeSettingsToForm() {
     m.y.value = Math.round(settings.y ?? (state.lottieData.h || 512) / 2);
     m.rotation.value = settings.rotation || 0;
     m.color.value = settings.color || '#ffffff';
+    m.gradientFrom.value = settings.gradientFrom || settings.color || '#ffffff';
+    m.gradientTo.value = settings.gradientTo || '#7c3aed';
+    m.gradientAngle.value = settings.gradientAngle || 0;
+    m.fillMode.querySelectorAll('button').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.value === settings.fillType);
+    });
     m.align.querySelectorAll('button').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.value === settings.align);
     });
+    updateFillControls();
 }
 
 function updateModalState() {
     const m = getModal();
     const hasFont = !!settings.font;
     const hasText = !!(settings.text || '').trim();
+    updateFillControls();
     m.go.disabled = !state.lottieData || !hasFont || !hasText;
     m.go.lastChild.textContent = selectedOverlayLayer ? ' Update' : ' Add';
 
@@ -237,14 +314,169 @@ function updateModalState() {
         m.info.textContent = 'Enter text';
     } else {
         const lines = settings.text.split(/\r?\n/).length;
-        m.info.textContent = `${settings.fontName} - ${lines} line${lines === 1 ? '' : 's'} - vector shape`;
+        const fillLabel = settings.fillType === 'gradient' ? 'gradient' : 'solid';
+        m.info.textContent = `${settings.fontName} - ${lines} line${lines === 1 ? '' : 's'} - ${fillLabel} vector shape`;
     }
+}
+
+function updateFillControls() {
+    const m = getModal();
+    const isGradient = settings.fillType === 'gradient';
+    m.colorField.classList.toggle('hidden', isGradient);
+    m.gradientControls.classList.toggle('hidden', !isGradient);
 }
 
 function clampNumber(value, min, max, fallback) {
     const num = parseFloat(value);
     if (!Number.isFinite(num)) return fallback;
     return Math.max(min, Math.min(max, num));
+}
+
+function updateTextPreview() {
+    if (!state.lottieData || !settings.font || !(settings.text || '').trim()) {
+        removeTextPreview();
+        restoreEditLayerVisibility();
+        return;
+    }
+
+    let shapes;
+    try {
+        shapes = buildTextShapes(settings);
+    } catch (_) {
+        removeTextPreview();
+        restoreEditLayerVisibility();
+        return;
+    }
+
+    const svg = ensureTextPreviewSvg();
+    const w = state.lottieData.w || 512;
+    const h = state.lottieData.h || 512;
+    svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+    svg.replaceChildren();
+
+    const ns = 'http://www.w3.org/2000/svg';
+    const defs = document.createElementNS(ns, 'defs');
+    const group = document.createElementNS(ns, 'g');
+    group.setAttribute('transform', `translate(${settings.x} ${settings.y}) rotate(${settings.rotation || 0})`);
+    group.setAttribute('opacity', String((settings.opacity ?? 100) / 100));
+
+    const path = document.createElementNS(ns, 'path');
+    path.setAttribute('d', shapes.map(shape => contourToSvgPath(shape.ks.k)).join(' '));
+    if (settings.fillType === 'gradient') {
+        const gradientId = 'text-preview-gradient';
+        const endpoints = getGradientEndpoints(shapes, settings.gradientAngle);
+        const gradient = document.createElementNS(ns, 'linearGradient');
+        gradient.setAttribute('id', gradientId);
+        gradient.setAttribute('gradientUnits', 'userSpaceOnUse');
+        gradient.setAttribute('x1', String(endpoints.s[0]));
+        gradient.setAttribute('y1', String(endpoints.s[1]));
+        gradient.setAttribute('x2', String(endpoints.e[0]));
+        gradient.setAttribute('y2', String(endpoints.e[1]));
+        const stopA = document.createElementNS(ns, 'stop');
+        stopA.setAttribute('offset', '0%');
+        stopA.setAttribute('stop-color', settings.gradientFrom || settings.color || '#ffffff');
+        const stopB = document.createElementNS(ns, 'stop');
+        stopB.setAttribute('offset', '100%');
+        stopB.setAttribute('stop-color', settings.gradientTo || '#7c3aed');
+        gradient.appendChild(stopA);
+        gradient.appendChild(stopB);
+        defs.appendChild(gradient);
+        svg.appendChild(defs);
+        path.setAttribute('fill', `url(#${gradientId})`);
+    } else {
+        path.setAttribute('fill', settings.color || '#ffffff');
+    }
+    path.setAttribute('fill-rule', 'nonzero');
+    group.appendChild(path);
+    svg.appendChild(group);
+
+    hideEditLayerForPreview();
+}
+
+function ensureTextPreviewSvg() {
+    if (previewSvg && previewSvg.parentNode === dom.lottiePlayer) return previewSvg;
+    const ns = 'http://www.w3.org/2000/svg';
+    previewSvg = document.createElementNS(ns, 'svg');
+    previewSvg.classList.add('text-preview-overlay');
+    previewSvg.setAttribute('xmlns', ns);
+    previewSvg.setAttribute('aria-hidden', 'true');
+    dom.lottiePlayer.appendChild(previewSvg);
+    return previewSvg;
+}
+
+function removeTextPreview() {
+    if (previewSvg && previewSvg.parentNode) previewSvg.parentNode.removeChild(previewSvg);
+    previewSvg = null;
+}
+
+function hideEditLayerForPreview() {
+    if (!selectedOverlayLayer) return;
+    if (!hiddenEditElement) {
+        const entry = state.flatLayers.find(e => e.layer === selectedOverlayLayer);
+        hiddenEditElement = findRenderedLayerElement(entry);
+        hiddenEditVisibility = hiddenEditElement ? hiddenEditElement.style.visibility : '';
+    }
+    if (hiddenEditElement) hiddenEditElement.style.visibility = 'hidden';
+}
+
+function restoreEditLayerVisibility() {
+    if (hiddenEditElement) hiddenEditElement.style.visibility = hiddenEditVisibility;
+    hiddenEditElement = null;
+    hiddenEditVisibility = '';
+}
+
+function findRenderedLayerElement(entry) {
+    if (!entry || !state.anim || !state.anim.renderer || !state.anim.renderer.elements) return null;
+    const { path } = entry;
+
+    if (path[0] !== 'asset') {
+        const layerArrayIndex = path[path.length - 1];
+        const el = state.anim.renderer.elements[layerArrayIndex];
+        return el ? (el.baseElement || el.layerElement || null) : null;
+    }
+
+    for (const el of state.anim.renderer.elements) {
+        if (el && el.elements) {
+            const childIdx = path[path.length - 1];
+            const child = el.elements[childIdx];
+            if (child) return child.baseElement || child.layerElement || null;
+        }
+    }
+    return null;
+}
+
+function contourToSvgPath(contour) {
+    const { v, i, o, c } = contour;
+    if (!v || v.length === 0) return '';
+    let d = `M ${fmt(v[0][0])} ${fmt(v[0][1])}`;
+    const segmentCount = c ? v.length : v.length - 1;
+
+    for (let idx = 0; idx < segmentCount; idx++) {
+        const next = (idx + 1) % v.length;
+        const start = v[idx];
+        const end = v[next];
+        const out = o[idx] || [0, 0];
+        const inn = i[next] || [0, 0];
+
+        if (isZeroHandle(out) && isZeroHandle(inn)) {
+            d += ` L ${fmt(end[0])} ${fmt(end[1])}`;
+        } else {
+            d += ` C ${fmt(start[0] + out[0])} ${fmt(start[1] + out[1])}`;
+            d += ` ${fmt(end[0] + inn[0])} ${fmt(end[1] + inn[1])}`;
+            d += ` ${fmt(end[0])} ${fmt(end[1])}`;
+        }
+    }
+
+    if (c) d += ' Z';
+    return d;
+}
+
+function isZeroHandle(handle) {
+    return Math.abs(handle[0]) < 0.001 && Math.abs(handle[1]) < 0.001;
+}
+
+function fmt(num) {
+    return String(round(num));
 }
 
 function commitOverlay() {
@@ -328,16 +560,7 @@ function applyTextLayerData(layer, shapes, opts) {
             ty: 'gr',
             it: [
                 ...shapes,
-                {
-                    ty: 'fl',
-                    c: { a: 0, k: [...hexToRgb(opts.color), 1] },
-                    o: { a: 0, k: 100 },
-                    r: 1,
-                    bm: 0,
-                    nm: 'Fill',
-                    mn: 'ADBE Vector Graphic - Fill',
-                    hd: false,
-                },
+                createFillItem(opts, shapes),
                 {
                     ty: 'tr',
                     p: { a: 0, k: [0, 0] },
@@ -368,8 +591,47 @@ function applyTextLayerData(layer, shapes, opts) {
         x: opts.x,
         y: opts.y,
         rotation: opts.rotation,
+        fillType: opts.fillType,
         color: opts.color,
+        gradientFrom: opts.gradientFrom,
+        gradientTo: opts.gradientTo,
+        gradientAngle: opts.gradientAngle,
         align: opts.align,
+    };
+}
+
+function createFillItem(opts, shapes) {
+    if (opts.fillType === 'gradient') {
+        const from = hexToRgb(opts.gradientFrom || opts.color || '#ffffff');
+        const to = hexToRgb(opts.gradientTo || '#7c3aed');
+        const endpoints = getGradientEndpoints(shapes, opts.gradientAngle);
+        return {
+            ty: 'gf',
+            o: { a: 0, k: 100 },
+            r: 1,
+            bm: 0,
+            g: {
+                p: 2,
+                k: { a: 0, k: [0, from[0], from[1], from[2], 1, to[0], to[1], to[2]] },
+            },
+            s: { a: 0, k: endpoints.s },
+            e: { a: 0, k: endpoints.e },
+            t: 1,
+            nm: 'Gradient Fill',
+            mn: 'ADBE Vector Graphic - G-Fill',
+            hd: false,
+        };
+    }
+
+    return {
+        ty: 'fl',
+        c: { a: 0, k: [...hexToRgb(opts.color), 1] },
+        o: { a: 0, k: 100 },
+        r: 1,
+        bm: 0,
+        nm: 'Fill',
+        mn: 'ADBE Vector Graphic - Fill',
+        hd: false,
     };
 }
 
@@ -414,6 +676,36 @@ function buildTextShapes(opts) {
         mn: 'ADBE Vector Shape - Group',
         hd: false,
     }));
+}
+
+function getGradientEndpoints(shapes, angleDeg = 0) {
+    const bounds = getShapesBounds(shapes);
+    const cx = (bounds.minX + bounds.maxX) / 2;
+    const cy = (bounds.minY + bounds.maxY) / 2;
+    const len = Math.max(1, Math.hypot(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY) / 2);
+    const rad = (angleDeg || 0) * Math.PI / 180;
+    const dx = Math.cos(rad) * len;
+    const dy = Math.sin(rad) * len;
+    return {
+        s: [round(cx - dx), round(cy - dy)],
+        e: [round(cx + dx), round(cy + dy)],
+    };
+}
+
+function getShapesBounds(shapes) {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const shape of shapes) {
+        const contour = shape && shape.ks && shape.ks.k;
+        if (!contour || !Array.isArray(contour.v)) continue;
+        for (const [x, y] of contour.v) {
+            minX = Math.min(minX, x);
+            minY = Math.min(minY, y);
+            maxX = Math.max(maxX, x);
+            maxY = Math.max(maxY, y);
+        }
+    }
+    if (minX === Infinity) return { minX: -1, minY: -1, maxX: 1, maxY: 1 };
+    return { minX, minY, maxX, maxY };
 }
 
 function getLineAdvance(font, line, scale, letterSpacing) {

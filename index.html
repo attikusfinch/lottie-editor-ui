@@ -319,6 +319,27 @@
                     </div>
                 </div>
                 <div class="modal-row text-modal-row">
+                    <label class="modal-label">Fill</label>
+                    <div class="seg-control" id="text-fill-control" data-name="fill">
+                        <button data-value="solid" class="active">Solid</button>
+                        <button data-value="gradient">Gradient</button>
+                    </div>
+                </div>
+                <div class="text-gradient-controls hidden" id="text-gradient-controls">
+                    <div class="text-field text-color-field">
+                        <label>From</label>
+                        <input type="color" id="text-gradient-from" value="#ffffff">
+                    </div>
+                    <div class="text-field text-color-field">
+                        <label>To</label>
+                        <input type="color" id="text-gradient-to" value="#7c3aed">
+                    </div>
+                    <div class="text-field">
+                        <label>Angle</label>
+                        <input type="number" id="text-gradient-angle" value="0" step="1">
+                    </div>
+                </div>
+                <div class="modal-row text-modal-row">
                     <label class="modal-label">Align</label>
                     <div class="seg-control" id="text-align-control" data-name="align">
                         <button data-value="left">Left</button>

@@ -4,6 +4,19 @@ import { state, dom } from './state.js';
 import { toast, downloadBlob } from './utils.js';
 
 const WORKER_URL = 'https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.js';
+const KEY_R = 0xff;
+const KEY_G = 0x00;
+const KEY_B = 0xff;
+const BAYER_8 = [
+     0, 48, 12, 60,  3, 51, 15, 63,
+    32, 16, 44, 28, 35, 19, 47, 31,
+     8, 56,  4, 52, 11, 59,  7, 55,
+    40, 24, 36, 20, 43, 27, 39, 23,
+     2, 50, 14, 62,  1, 49, 13, 61,
+    34, 18, 46, 30, 33, 17, 45, 29,
+    10, 58,  6, 54,  9, 57,  5, 53,
+    42, 26, 38, 22, 41, 25, 37, 21,
+];
 
 // gif.js spawns a Web Worker. Browsers refuse to construct workers from a
 // cross-origin URL even if CORS headers are present, so we fetch the script
@@ -140,6 +153,27 @@ function setProgress(p, text) {
     if (text) m.progressText.textContent = text;
 }
 
+function applyTransparentGifAlpha(imageData, width, height) {
+    const d = imageData.data;
+    for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+            const p = (y * width + x) * 4;
+            const alpha = d[p + 3];
+            const threshold = (BAYER_8[(y & 7) * 8 + (x & 7)] + 0.5) * 4;
+            const transparent = alpha <= 0 || (alpha < 255 && alpha < threshold);
+
+            if (transparent) {
+                d[p] = KEY_R;
+                d[p + 1] = KEY_G;
+                d[p + 2] = KEY_B;
+            } else if (d[p] === KEY_R && d[p + 1] === KEY_G && d[p + 2] === KEY_B) {
+                d[p + 2] = 0xfe;
+            }
+            d[p + 3] = 255;
+        }
+    }
+}
+
 // ─── SVG → Image → canvas pipeline ───
 // Using the SVG renderer preserves gradients, masks, and effects which the
 // canvas renderer often quantizes incorrectly. We serialize each frame's SVG
@@ -254,7 +288,6 @@ async function startEncoding() {
 
     // ── Setup GIF encoder ──
     const transparent = settings.background === 'transparent';
-    const KEY_R = 0xff, KEY_G = 0x00, KEY_B = 0xff;
     const bgColor = transparent ? '#ffffff' : settings.background;
 
     const gif = new GIF({
@@ -303,27 +336,10 @@ async function startEncoding() {
                 URL.revokeObjectURL(blobUrl);
                 blobUrl = null;
 
-                // GIF only supports 1-bit alpha. Hard-cut at α = 128:
-                //   α <  128 → key colour (magenta) → transparent in GIF
-                //   α ≥ 128 → keep RGB as drawn, force opaque
-                // No matte blend — anti-aliased edges keep their faded RGB
-                // and just become slightly jagged, which is a far better
-                // tradeoff than tinted fringes from compositing onto a
-                // mystery colour.
+                // GIF has 1-bit alpha, so dither semi-transparent pixels
+                // instead of clipping soft gradients at a single threshold.
                 const imageData = fctx.getImageData(0, 0, w, h);
-                const d = imageData.data;
-                for (let p = 0; p < d.length; p += 4) {
-                    if (d[p + 3] < 128) {
-                        d[p]   = KEY_R;
-                        d[p+1] = KEY_G;
-                        d[p+2] = KEY_B;
-                    } else if (d[p] === KEY_R && d[p+1] === KEY_G && d[p+2] === KEY_B) {
-                        // Real pixel that happens to be pure magenta: nudge
-                        // so it isn't accidentally keyed out.
-                        d[p+2] = 0xfe;
-                    }
-                    d[p+3] = 255;
-                }
+                applyTransparentGifAlpha(imageData, w, h);
                 fctx.putImageData(imageData, 0, 0);
             } else {
                 fctx.fillStyle = bgColor;
