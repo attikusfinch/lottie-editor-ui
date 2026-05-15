@@ -419,6 +419,35 @@ body {
     background: var(--bg-elevated);
 }
 
+.btn-layer-action {
+    width: 26px;
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(99, 102, 241, 0.08);
+    border: 1px solid rgba(99, 102, 241, 0.24);
+    border-radius: var(--radius-sm);
+    color: var(--accent);
+    cursor: pointer;
+    transition: all var(--duration) var(--ease);
+    flex-shrink: 0;
+}
+
+.btn-layer-action:hover:not(:disabled) {
+    background: rgba(99, 102, 241, 0.18);
+    border-color: var(--accent);
+    box-shadow: 0 0 8px var(--accent-glow);
+}
+
+.btn-layer-action:disabled {
+    opacity: 0.38;
+    cursor: default;
+    background: var(--bg-input);
+    border-color: var(--border);
+    color: var(--text-muted);
+}
+
 /* Extend Layer to Full button (inspector) */
 .layer-extend-btn {
     display: flex;

@@ -5,6 +5,8 @@ import { renderPreview, renderPreviewSilent } from './preview.js';
 let renderInspectorFn = null;
 let renderActiveTabFn = null;
 let buildTimelineFn = null;
+const SHAPE_LAYER_TYPE = 4;
+const PASTE_OFFSET = 24;
 
 export function setInspectorCallbacks(ri, rat) {
     renderInspectorFn = ri;
@@ -13,6 +15,190 @@ export function setInspectorCallbacks(ri, rat) {
 
 export function setTimelineCallback(fn) {
     buildTimelineFn = fn;
+}
+
+export function updateLayerClipboardControls() {
+    if (dom.btnCopyShape) {
+        dom.btnCopyShape.disabled = !state.lottieData || getSelectedShapeEntries().length === 0;
+    }
+    if (dom.btnPasteShape) {
+        dom.btnPasteShape.disabled = !state.lottieData || !state.shapeClipboard || !state.shapeClipboard.layers.length;
+    }
+}
+
+export function copySelectedShapeLayers() {
+    if (!state.lottieData) {
+        toast('Load a Lottie file first', 'info');
+        return false;
+    }
+
+    const entries = getSelectedShapeEntries();
+    if (entries.length === 0) {
+        toast('Select a shape layer to copy', 'info');
+        return false;
+    }
+
+    state.shapeClipboard = {
+        layers: entries.map(({ entry }) => JSON.parse(JSON.stringify(entry.layer))),
+        copiedAt: Date.now(),
+    };
+    state.shapePasteCount = 0;
+    updateLayerClipboardControls();
+
+    const count = entries.length;
+    toast(`Copied ${count} shape layer${count !== 1 ? 's' : ''}`, 'success');
+    return true;
+}
+
+export function pasteCopiedShapeLayers() {
+    if (!state.lottieData) {
+        toast('Load a Lottie file first', 'info');
+        return false;
+    }
+    if (!state.shapeClipboard || !state.shapeClipboard.layers || state.shapeClipboard.layers.length === 0) {
+        toast('Copy a shape layer first', 'info');
+        return false;
+    }
+
+    saveSnapshot();
+
+    let nextInd = getMaxLayerInd() + 1;
+    const indMap = new Map();
+    for (const layer of state.shapeClipboard.layers) {
+        if (Number.isFinite(layer.ind)) {
+            indMap.set(layer.ind, nextInd++);
+        }
+    }
+
+    const targetParent = getPasteTargetParent();
+    const offset = PASTE_OFFSET * (state.shapePasteCount + 1);
+    const pastedLayers = state.shapeClipboard.layers.map(source => {
+        const layer = JSON.parse(JSON.stringify(source));
+        const sourceInd = Number.isFinite(layer.ind) ? layer.ind : null;
+        layer.ind = sourceInd !== null ? indMap.get(sourceInd) : nextInd++;
+        layer.nm = makeCopyName(layer.nm || `Shape ${layer.ind}`);
+
+        if (layer.parent !== undefined) {
+            if (indMap.has(layer.parent)) {
+                layer.parent = indMap.get(layer.parent);
+            } else if (targetParent !== undefined) {
+                layer.parent = targetParent;
+            } else if (!hasTopLevelLayerInd(layer.parent)) {
+                delete layer.parent;
+            }
+        } else if (targetParent !== undefined) {
+            layer.parent = targetParent;
+        }
+
+        offsetLayerPosition(layer, offset, offset);
+        return layer;
+    });
+
+    const insertIndex = getPasteInsertIndex();
+    state.lottieData.layers.splice(insertIndex, 0, ...pastedLayers);
+    state.shapePasteCount += 1;
+
+    renderPreview({ autoplay: false, preserveFrame: true });
+    buildLayersList();
+    selectLayerRefs(pastedLayers);
+    if (renderInspectorFn) renderInspectorFn();
+    updateSelectionBox();
+    updateLayerClipboardControls();
+
+    const count = pastedLayers.length;
+    toast(`Pasted ${count} shape layer${count !== 1 ? 's' : ''}`, 'success');
+    return true;
+}
+
+function getSelectedShapeEntries() {
+    return [...state.selectedLayerIndices]
+        .sort((a, b) => a - b)
+        .map(idx => ({ idx, entry: state.flatLayers[idx] }))
+        .filter(({ entry }) => entry && entry.layer && entry.layer.ty === SHAPE_LAYER_TYPE);
+}
+
+function getMaxLayerInd() {
+    let maxInd = 0;
+    function scan(layers) {
+        if (!Array.isArray(layers)) return;
+        for (const layer of layers) {
+            if (Number.isFinite(layer.ind)) maxInd = Math.max(maxInd, layer.ind);
+        }
+    }
+    scan(state.lottieData.layers);
+    for (const asset of state.lottieData.assets || []) scan(asset.layers);
+    return maxInd;
+}
+
+function hasTopLevelLayerInd(ind) {
+    return Number.isFinite(ind) && state.lottieData.layers.some(layer => layer.ind === ind);
+}
+
+function getPasteTargetParent() {
+    const selected = [...state.selectedLayerIndices].sort((a, b) => a - b);
+    if (selected.length === 0) return undefined;
+
+    const entry = state.flatLayers[selected[0]];
+    if (!entry || !entry.layer || entry.path[0] === 'asset') return undefined;
+
+    if (entry.layer.ty === 3 && Number.isFinite(entry.layer.ind)) return entry.layer.ind;
+    if (hasTopLevelLayerInd(entry.layer.parent)) return entry.layer.parent;
+    return undefined;
+}
+
+function getPasteInsertIndex() {
+    let insertAfter = -1;
+    for (const idx of state.selectedLayerIndices) {
+        const entry = state.flatLayers[idx];
+        if (entry && entry.path[0] !== 'asset' && Number.isInteger(entry.path[0])) {
+            insertAfter = Math.max(insertAfter, entry.path[0]);
+        }
+    }
+    return insertAfter >= 0 ? insertAfter + 1 : 0;
+}
+
+function makeCopyName(name) {
+    const base = String(name || 'Shape').replace(/\s+copy(?:\s+\d+)?$/i, '');
+    return `${base} copy`;
+}
+
+function offsetLayerPosition(layer, dx, dy) {
+    const prop = layer && layer.ks && layer.ks.p;
+    if (!prop) return;
+
+    if (prop.a === 1 && Array.isArray(prop.k)) {
+        for (const kf of prop.k) {
+            if (kf && Array.isArray(kf.s)) {
+                kf.s[0] = (parseFloat(kf.s[0]) || 0) + dx;
+                kf.s[1] = (parseFloat(kf.s[1]) || 0) + dy;
+            }
+            if (kf && Array.isArray(kf.e)) {
+                kf.e[0] = (parseFloat(kf.e[0]) || 0) + dx;
+                kf.e[1] = (parseFloat(kf.e[1]) || 0) + dy;
+            }
+        }
+        return;
+    }
+
+    if (Array.isArray(prop.k)) {
+        prop.k[0] = (parseFloat(prop.k[0]) || 0) + dx;
+        prop.k[1] = (parseFloat(prop.k[1]) || 0) + dy;
+    }
+}
+
+function selectLayerRefs(layers) {
+    const refs = new Set(layers);
+    state.selectedLayerIndices.clear();
+    state.flatLayers.forEach((entry, idx) => {
+        if (refs.has(entry.layer)) state.selectedLayerIndices.add(idx);
+    });
+
+    state.currentTab = 'inspector';
+    document.querySelectorAll('.inspector-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === 'inspector'));
+    dom.layersList.querySelectorAll('.layer-item').forEach((el, i) => {
+        el.classList.toggle('selected', state.selectedLayerIndices.has(i));
+    });
+    dom.lottiePlayer.style.cursor = state.selectedLayerIndices.size > 0 ? 'grab' : '';
 }
 
 // ─── Extend All Layers to Full Animation Range ───
@@ -115,6 +301,7 @@ export function buildLayersList() {
 
     if (state.flatLayers.length === 0) {
         dom.layersList.innerHTML = `<div class="empty-state"><p>No layers found</p></div>`;
+        updateLayerClipboardControls();
         return;
     }
 
@@ -217,6 +404,7 @@ export function buildLayersList() {
     requestAnimationFrame(() => requestAnimationFrame(() => renderLayerThumbnails()));
 
     if (buildTimelineFn) buildTimelineFn();
+    updateLayerClipboardControls();
 }
 
 // ─── Layer Thumbnails (rasterized to avoid ID conflicts) ───
@@ -374,6 +562,7 @@ export function selectLayer(idx, event) {
             document.querySelectorAll('.inspector-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === 'colors'));
             if (renderActiveTabFn) renderActiveTabFn();
             updateSelectionBox();
+            updateLayerClipboardControls();
             return;
         }
         state.selectedLayerIndices.clear();
@@ -394,6 +583,7 @@ export function selectLayer(idx, event) {
 
     if (renderInspectorFn) renderInspectorFn();
     updateSelectionBox();
+    updateLayerClipboardControls();
 
     dom.lottiePlayer.style.cursor = state.selectedLayerIndices.size > 0 ? 'grab' : '';
 }
@@ -449,6 +639,7 @@ export function deleteLayer(idx) {
     renderPreview();
     buildLayersList();
     if (renderInspectorFn) renderInspectorFn();
+    updateLayerClipboardControls();
 }
 
 // ─── Selection Bounding Box ───

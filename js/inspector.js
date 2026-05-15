@@ -7,7 +7,7 @@ import {
     getStaticOrFirstKeyframeScalar, setStaticOrFirstKeyframeScalar,
 } from './utils.js';
 import { renderPreview, renderPreviewSilent } from './preview.js';
-import { buildLayersList, updateSelectionBox } from './layers.js';
+import { buildLayersList, updateSelectionBox, updateLayerClipboardControls } from './layers.js';
 import { renderGlobalColorPalette, renderAdjustPanel, extractColors } from './colors.js';
 
 // ─── Tab Switching ───
@@ -39,6 +39,7 @@ export function renderActiveTab() {
             state.selectedLayerIndices.clear();
             dom.layersList.querySelectorAll('.layer-item').forEach(el => el.classList.remove('selected'));
             updateSelectionBox();
+            updateLayerClipboardControls();
             renderGlobalColorPalette();
             break;
         case 'adjust':

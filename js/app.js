@@ -4,7 +4,18 @@ import { state, initDom, dom } from './state.js';
 import { toast, saveSnapshot } from './utils.js';
 import { loadFile, mergeFile } from './file.js';
 import { renderPreview, initPlaybackControls, setUpdateSelectionBox, setPlayheadCallback, setRebuildTimelineCallback } from './preview.js';
-import { buildLayersList, initDrag, updateSelectionBox, setInspectorCallbacks, setTimelineCallback, extendAllLayers, selectLayer } from './layers.js';
+import {
+    buildLayersList,
+    initDrag,
+    updateSelectionBox,
+    setInspectorCallbacks,
+    setTimelineCallback,
+    extendAllLayers,
+    selectLayer,
+    copySelectedShapeLayers,
+    pasteCopiedShapeLayers,
+    updateLayerClipboardControls,
+} from './layers.js';
 import { renderInspector, renderActiveTab, initTabs } from './inspector.js';
 import { initExport } from './export.js';
 import { initGifExport } from './gif.js';
@@ -124,6 +135,18 @@ function togglePlayPause() {
 document.addEventListener('keydown', (e) => {
     if (isEditingInput(e.target)) return;
 
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+        e.preventDefault();
+        copySelectedShapeLayers();
+        return;
+    }
+
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
+        e.preventDefault();
+        pasteCopiedShapeLayers();
+        return;
+    }
+
     if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
         e.preventDefault();
         performUndo();
@@ -168,6 +191,9 @@ document.addEventListener('keydown', (e) => {
 });
 
 dom.btnUndo.addEventListener('click', () => performUndo());
+dom.btnCopyShape.addEventListener('click', () => copySelectedShapeLayers());
+dom.btnPasteShape.addEventListener('click', () => pasteCopiedShapeLayers());
+updateLayerClipboardControls();
 
 // Enable undo button whenever a snapshot is saved
 setInterval(() => {

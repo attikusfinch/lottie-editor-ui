@@ -31,6 +31,10 @@ export const state = {
     savedAdjust: { hue: 0, sat: 0, light: 0 },
     savedGroupAdjust: {},
     collapsedLayers: new Set(), // layer indices that are collapsed in tree
+
+    // Shape layer clipboard
+    shapeClipboard: null,
+    shapePasteCount: 0,
 };
 
 /* DOM references — populated once at init */
@@ -62,6 +66,8 @@ export function initDom() {
     dom.trimOut          = document.getElementById('trim-out');
     dom.btnTrimApply     = document.getElementById('btn-trim-apply');
     dom.btnExtendAll     = document.getElementById('btn-extend-all');
+    dom.btnCopyShape     = document.getElementById('btn-copy-shape');
+    dom.btnPasteShape    = document.getElementById('btn-paste-shape');
 }
 
 /* Layer type constants */
