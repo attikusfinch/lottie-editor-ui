@@ -14,7 +14,10 @@ let rebuildTimelineFn = null;
 export function setRebuildTimelineCallback(fn) { rebuildTimelineFn = fn; }
 
 // ─── Main Render ───
-export function renderPreview() {
+export function renderPreview(options = {}) {
+    const { autoplay = true, preserveFrame = false } = options;
+    const previousFrame = state.anim ? state.anim.currentFrame : 0;
+
     if (state.anim) {
         state.anim.destroy();
         state.anim = null;
@@ -54,7 +57,7 @@ export function renderPreview() {
             container: dom.lottiePlayer,
             renderer: 'svg',
             loop: state.isLooping,
-            autoplay: true,
+            autoplay,
             animationData: animData,
         });
     } catch (err) {
@@ -63,11 +66,17 @@ export function renderPreview() {
         return;
     }
 
-    state.isPlaying = true;
+    state.isPlaying = autoplay;
     updatePlayPauseIcon();
 
     const totalFrames = state.anim.totalFrames || 0;
     dom.scrubber.max = Math.floor(totalFrames);
+    if (!autoplay) {
+        const frame = preserveFrame ? Math.min(previousFrame, totalFrames) : 0;
+        state.anim.goToAndStop(frame, true);
+        dom.scrubber.value = Math.floor(frame);
+        dom.frameLabel.textContent = `${Math.floor(frame)} / ${Math.floor(totalFrames)}`;
+    }
 
     state.anim.addEventListener('enterFrame', () => {
         const cf = Math.floor(state.anim.currentFrame);

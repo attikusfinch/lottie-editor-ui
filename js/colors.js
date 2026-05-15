@@ -1,8 +1,8 @@
 /* Color extraction, global palette, HSL adjust with per-group sliders */
 
 import { state, dom } from './state.js';
-import { rgbToHex, hexToRgb, hexToRgbNorm, rgbToHsl, hslToRgb, saveSnapshot, escHtml } from './utils.js';
-import { renderPreviewSilent } from './preview.js';
+import { rgbToHex, hexToRgb, hexToRgbNorm, rgbToHsl, hslToRgb, saveSnapshot, escHtml, toast } from './utils.js';
+import { renderPreview, renderPreviewSilent } from './preview.js';
 
 // ─── Color Extraction ───
 
@@ -260,7 +260,24 @@ export function renderAdjustPanel() {
     const activeGroups = HUE_GROUPS.filter(g => groupCounts[g.key]);
     if (groupCounts[NEUTRAL_KEY]) activeGroups.push({ key: NEUTRAL_KEY, label: '⚪ Neutrals' });
 
+    const compW = Math.max(1, Math.round(state.lottieData.w || 512));
+    const compH = Math.max(1, Math.round(state.lottieData.h || 512));
+
     let html = `
+        <div class="inspector-section">
+            <div class="inspector-section-title">Composition</div>
+            <div class="comp-size-grid">
+                <div class="comp-size-field">
+                    <label>W</label>
+                    <input type="number" class="inspector-input" id="comp-width" min="1" step="1" value="${compW}">
+                </div>
+                <div class="comp-size-field">
+                    <label>H</label>
+                    <input type="number" class="inspector-input" id="comp-height" min="1" step="1" value="${compH}">
+                </div>
+            </div>
+            <button class="layer-extend-btn" id="btn-comp-size-apply">Apply Size</button>
+        </div>
         <div class="inspector-section">
             <div class="inspector-section-title">🌈 Global</div>
             <div class="adjust-section">
@@ -297,6 +314,27 @@ export function renderAdjustPanel() {
     });
 
     dom.inspectorContent.innerHTML = html;
+
+    // Composition size
+    const compWidthInput = document.getElementById('comp-width');
+    const compHeightInput = document.getElementById('comp-height');
+    const compApply = document.getElementById('btn-comp-size-apply');
+    const applyCompSize = () => {
+        const nextW = Math.max(1, Math.round(parseFloat(compWidthInput.value) || compW));
+        const nextH = Math.max(1, Math.round(parseFloat(compHeightInput.value) || compH));
+        compWidthInput.value = nextW;
+        compHeightInput.value = nextH;
+        if (nextW === state.lottieData.w && nextH === state.lottieData.h) return;
+
+        saveSnapshot();
+        state.lottieData.w = nextW;
+        state.lottieData.h = nextH;
+        renderPreview({ autoplay: false, preserveFrame: true });
+        toast(`Composition size: ${nextW} x ${nextH}`, 'success');
+    };
+    compApply.addEventListener('click', applyCompSize);
+    compWidthInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') applyCompSize(); });
+    compHeightInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') applyCompSize(); });
 
     // Bind global
     const hS = document.getElementById('adj-hue'), sS = document.getElementById('adj-sat'), lS = document.getElementById('adj-light');
