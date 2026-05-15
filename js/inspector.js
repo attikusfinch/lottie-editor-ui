@@ -9,6 +9,15 @@ import {
 import { renderPreview, renderPreviewSilent } from './preview.js';
 import { buildLayersList, updateSelectionBox, updateLayerClipboardControls } from './layers.js';
 import { renderGlobalColorPalette, renderAdjustPanel, extractColors } from './colors.js';
+import {
+    clearSelectedShapePath,
+    collectEditableShapeItems,
+    getSelectedShapePathForLayer,
+    getShapePathKey,
+    moveShapePath,
+    parseShapePathKey,
+    setSelectedShapePath,
+} from './shapes.js';
 
 // ─── Tab Switching ───
 export function initTabs() {
@@ -37,6 +46,7 @@ export function renderActiveTab() {
     switch (state.currentTab) {
         case 'colors':
             state.selectedLayerIndices.clear();
+            clearSelectedShapePath();
             dom.layersList.querySelectorAll('.layer-item').forEach(el => el.classList.remove('selected'));
             updateSelectionBox();
             updateLayerClipboardControls();
@@ -119,6 +129,10 @@ export function renderInspector() {
             </button>
         </div>`;
 
+    if (layer.ty === 4) {
+        html += renderShapeContentsSection(layer);
+    }
+
     // Drag hint
     if (ks && ks.p) {
         html += `<div class="inspector-section" style="margin-bottom:8px">
@@ -175,6 +189,8 @@ export function renderInspector() {
     dom.inspectorContent.innerHTML = html;
 
     // ─── Bind Events ───
+    bindShapeContentsEvents(layer);
+
     const inpName = document.getElementById('inp-name');
     if (inpName) inpName.addEventListener('change', () => { saveSnapshot(); layer.nm = inpName.value; buildLayersList(); });
 
@@ -235,4 +251,157 @@ export function renderInspector() {
         });
         inp.addEventListener('change', () => { saved = false; });
     });
+}
+
+function renderShapeContentsSection(layer) {
+    const items = collectEditableShapeItems(layer);
+    if (items.length === 0) {
+        return `
+            <div class="inspector-section">
+                <div class="inspector-section-title">Shape Contents</div>
+                <div class="shape-empty">No movable shape items found</div>
+            </div>`;
+    }
+
+    const selectedPath = getSelectedShapePathForLayer(layer);
+    const selectedKey = getShapePathKey(selectedPath);
+    const selectedItem = items.find(item => item.pathKey === selectedKey);
+
+    const rows = items.map(item => {
+        const active = item.pathKey === selectedKey;
+        return `
+            <button type="button" class="shape-content-row${active ? ' active' : ''}" data-shape-path="${item.pathKey}" style="--shape-indent:${8 + item.depth * 14}px">
+                <span class="shape-content-icon">${shapeIcon(item.item.ty)}</span>
+                <span class="shape-content-name">${escHtml(item.label)}</span>
+                <span class="shape-content-type">${escHtml(item.typeLabel)}</span>
+            </button>`;
+    }).join('');
+
+    return `
+        <div class="inspector-section">
+            <div class="inspector-section-title">Shape Contents</div>
+            <div class="shape-content-list">${rows}</div>
+            ${selectedItem ? renderShapeMoveControls(selectedItem) : '<div class="shape-help">Select an inner shape, then nudge it or drag on the preview.</div>'}
+        </div>`;
+}
+
+function renderShapeMoveControls(selectedItem) {
+    return `
+        <div class="shape-move-panel">
+            <div class="shape-selected-label">
+                <span>${shapeIcon(selectedItem.item.ty)}</span>
+                <span>${escHtml(selectedItem.label)}</span>
+            </div>
+            <div class="shape-step-row">
+                <label class="shape-step-label" for="shape-nudge-step">Step</label>
+                <input type="number" class="inspector-input" id="shape-nudge-step" value="1" min="0.1" step="0.5">
+            </div>
+            <div class="shape-nudge-grid" aria-label="Nudge selected shape">
+                <span></span>
+                <button type="button" class="shape-nudge-btn" data-shape-nudge="0,-1" title="Move up">${nudgeIcon('up')}</button>
+                <span></span>
+                <button type="button" class="shape-nudge-btn" data-shape-nudge="-1,0" title="Move left">${nudgeIcon('left')}</button>
+                <button type="button" class="shape-nudge-btn" data-shape-clear title="Clear inner shape selection">${nudgeIcon('clear')}</button>
+                <button type="button" class="shape-nudge-btn" data-shape-nudge="1,0" title="Move right">${nudgeIcon('right')}</button>
+                <span></span>
+                <button type="button" class="shape-nudge-btn" data-shape-nudge="0,1" title="Move down">${nudgeIcon('down')}</button>
+                <span></span>
+            </div>
+            <div class="shape-offset-grid">
+                <label>X <input type="number" class="inspector-input" id="shape-offset-x" value="0" step="1"></label>
+                <label>Y <input type="number" class="inspector-input" id="shape-offset-y" value="0" step="1"></label>
+            </div>
+            <button type="button" class="shape-offset-apply" id="btn-shape-offset-apply">Apply Offset</button>
+            <div class="shape-help">Only this inner shape moves. Layer position stays unchanged.</div>
+        </div>`;
+}
+
+function bindShapeContentsEvents(layer) {
+    if (layer.ty !== 4) return;
+
+    dom.inspectorContent.querySelectorAll('.shape-content-row').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const path = parseShapePathKey(btn.dataset.shapePath);
+            if (!path) return;
+
+            const currentKey = getShapePathKey(getSelectedShapePathForLayer(layer));
+            if (currentKey === btn.dataset.shapePath) clearSelectedShapePath();
+            else setSelectedShapePath(layer, path);
+
+            renderInspector();
+            updateSelectionBox();
+        });
+    });
+
+    const moveSelectedShape = (dx, dy) => {
+        const path = getSelectedShapePathForLayer(layer);
+        if (!path) return;
+        if (!Number.isFinite(dx) || !Number.isFinite(dy) || (dx === 0 && dy === 0)) return;
+
+        saveSnapshot();
+        if (!moveShapePath(layer, path, dx, dy)) {
+            toast('This shape item cannot be moved yet', 'error');
+            return;
+        }
+
+        renderPreview({ autoplay: false, preserveFrame: true });
+        renderInspector();
+        updateSelectionBox();
+    };
+
+    const getStep = () => {
+        const stepInput = document.getElementById('shape-nudge-step');
+        return Math.max(0.1, parseFloat(stepInput && stepInput.value) || 1);
+    };
+
+    dom.inspectorContent.querySelectorAll('[data-shape-nudge]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const [dirX, dirY] = btn.dataset.shapeNudge.split(',').map(v => parseFloat(v) || 0);
+            const step = getStep();
+            moveSelectedShape(dirX * step, dirY * step);
+        });
+    });
+
+    const clearBtn = dom.inspectorContent.querySelector('[data-shape-clear]');
+    if (clearBtn) {
+        clearBtn.addEventListener('click', () => {
+            clearSelectedShapePath();
+            renderInspector();
+            updateSelectionBox();
+        });
+    }
+
+    const applyBtn = document.getElementById('btn-shape-offset-apply');
+    if (applyBtn) {
+        applyBtn.addEventListener('click', () => {
+            const x = parseFloat(document.getElementById('shape-offset-x')?.value) || 0;
+            const y = parseFloat(document.getElementById('shape-offset-y')?.value) || 0;
+            moveSelectedShape(x, y);
+        });
+    }
+}
+
+function shapeIcon(type) {
+    switch (type) {
+        case 'gr': return 'G';
+        case 'sh': return 'P';
+        case 'el': return 'O';
+        case 'rc': return 'R';
+        case 'sr': return 'S';
+        default: return '?';
+    }
+}
+
+function nudgeIcon(direction) {
+    const paths = {
+        up: 'M7 3l-4 4h2.5v4h3V7H11L7 3Z',
+        down: 'M7 11l4-4H8.5V3h-3v4H3l4 4Z',
+        left: 'M3 7l4-4v2.5h4v3H7V11L3 7Z',
+        right: 'M11 7L7 3v2.5H3v3h4V11l4-4Z',
+        clear: 'M3.5 3.5l7 7M10.5 3.5l-7 7',
+    };
+    if (direction === 'clear') {
+        return `<svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="${paths.clear}" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+    }
+    return `<svg width="13" height="13" viewBox="0 0 14 14" fill="currentColor"><path d="${paths[direction]}"/></svg>`;
 }

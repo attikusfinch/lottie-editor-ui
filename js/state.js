@@ -35,6 +35,13 @@ export const state = {
     // Shape layer clipboard
     shapeClipboard: null,
     shapePasteCount: 0,
+
+    // Shape content selection
+    selectedShapeLayerKey: null,
+    selectedShapePath: null,
+    dragShapeEntry: null,
+    dragShapeLastDx: 0,
+    dragShapeLastDy: 0,
 };
 
 /* DOM references — populated once at init */

@@ -2,6 +2,7 @@
 
 import { state, dom } from './state.js';
 import { toast, saveSnapshot } from './utils.js';
+import { clearSelectedShapePath } from './shapes.js';
 
 // ─── Read .json or .tgs file ───
 export function readLottieFile(file, callback) {
@@ -57,6 +58,7 @@ export function loadFile(file, { renderPreview, buildLayersList, renderInspector
             dom.fileNameLabel.textContent = file.name;
             dom.btnExport.disabled = false;
             state.selectedLayerIndices.clear();
+            clearSelectedShapePath();
             state.undoStack.length = 0;
             state.originalColors = null;
             state.savedAdjust = { hue: 0, sat: 0, light: 0 };

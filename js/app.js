@@ -21,6 +21,7 @@ import { initExport } from './export.js';
 import { initGifExport } from './gif.js';
 import { initTextOverlay } from './text.js';
 import { initTimelineDom, initTimeline, buildTimeline, updatePlayhead, setTimelineSelectCallback, setTimelineRebuildCallback, trimInToCTI, trimOutToCTI } from './timeline.js';
+import { clearSelectedShapePath } from './shapes.js';
 
 // ─── Initialize ───
 initDom();
@@ -73,6 +74,7 @@ function performUndo() {
     if (state.undoStack.length === 0) { toast('Nothing to undo', 'info'); return; }
     state.lottieData = JSON.parse(state.undoStack.pop());
     state.selectedLayerIndices.clear();
+    clearSelectedShapePath();
     state.originalColors = null;
     renderPreview();
     buildLayersList();

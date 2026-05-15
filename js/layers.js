@@ -1,6 +1,7 @@
 import { state, dom, TYPE_NAMES, TYPE_ICONS } from './state.js';
 import { saveSnapshot, getStaticOrFirstKeyframe, setStaticOrFirstKeyframe, toast } from './utils.js';
 import { renderPreview, renderPreviewSilent } from './preview.js';
+import { clearSelectedShapePath, getSelectedShapePathForLayer, layerMatchesShapeSelection, moveShapePath } from './shapes.js';
 
 let renderInspectorFn = null;
 let renderActiveTabFn = null;
@@ -563,6 +564,7 @@ export function selectLayer(idx, event) {
             if (renderActiveTabFn) renderActiveTabFn();
             updateSelectionBox();
             updateLayerClipboardControls();
+            clearSelectedShapePath();
             return;
         }
         state.selectedLayerIndices.clear();
@@ -580,6 +582,13 @@ export function selectLayer(idx, event) {
     dom.layersList.querySelectorAll('.layer-item').forEach((el, i) => {
         el.classList.toggle('selected', state.selectedLayerIndices.has(i));
     });
+
+    if (state.selectedLayerIndices.size !== 1) {
+        clearSelectedShapePath();
+    } else {
+        const selectedEntry = state.flatLayers[[...state.selectedLayerIndices][0]];
+        if (!selectedEntry || !layerMatchesShapeSelection(selectedEntry.layer)) clearSelectedShapePath();
+    }
 
     if (renderInspectorFn) renderInspectorFn();
     updateSelectionBox();
@@ -634,6 +643,7 @@ export function deleteLayer(idx) {
     const removed = before - state.lottieData.layers.length;
 
     state.selectedLayerIndices.clear();
+    clearSelectedShapePath();
     toast(`Deleted ${removed} layer${removed !== 1 ? 's' : ''}`, 'info');
 
     renderPreview();
@@ -713,6 +723,25 @@ export function initDrag() {
     dom.lottiePlayer.addEventListener('mousedown', (e) => {
         if (!state.lottieData || state.selectedLayerIndices.size === 0) return;
 
+        if (state.selectedLayerIndices.size === 1) {
+            const entry = state.flatLayers[[...state.selectedLayerIndices][0]];
+            const shapePath = entry && getSelectedShapePathForLayer(entry.layer);
+            if (entry && shapePath) {
+                saveSnapshot();
+                state.isDragging = true;
+                state.dragShapeEntry = { entry, shapePath };
+                state.dragShapeLastDx = 0;
+                state.dragShapeLastDy = 0;
+                state.dragStartMouseX = e.clientX;
+                state.dragStartMouseY = e.clientY;
+
+                if (state.anim && state.isPlaying) state.anim.pause();
+                dom.lottiePlayer.style.cursor = 'grabbing';
+                e.preventDefault();
+                return;
+            }
+        }
+
         state.dragEntries = [];
         for (const si of state.selectedLayerIndices) {
             const entry = state.flatLayers[si];
@@ -733,10 +762,23 @@ export function initDrag() {
     });
 
     document.addEventListener('mousemove', (e) => {
-        if (!state.isDragging || state.dragEntries.length === 0) return;
+        if (!state.isDragging) return;
 
         const dx = (e.clientX - state.dragStartMouseX) / state.previewScale;
         const dy = (e.clientY - state.dragStartMouseY) / state.previewScale;
+
+        if (state.dragShapeEntry) {
+            const moveDx = dx - state.dragShapeLastDx;
+            const moveDy = dy - state.dragShapeLastDy;
+            if (moveShapePath(state.dragShapeEntry.entry.layer, state.dragShapeEntry.shapePath, moveDx, moveDy)) {
+                state.dragShapeLastDx = dx;
+                state.dragShapeLastDy = dy;
+                renderPreviewSilent();
+            }
+            return;
+        }
+
+        if (state.dragEntries.length === 0) return;
 
         for (const de of state.dragEntries) {
             const newX = Math.round(de.startX + dx);
@@ -759,6 +801,9 @@ export function initDrag() {
         if (!state.isDragging) return;
         state.isDragging = false;
         state.dragEntries = [];
+        state.dragShapeEntry = null;
+        state.dragShapeLastDx = 0;
+        state.dragShapeLastDy = 0;
         dom.lottiePlayer.style.cursor = state.selectedLayerIndices.size > 0 ? 'grab' : '';
 
         if (state.anim && state.isPlaying) state.anim.play();
