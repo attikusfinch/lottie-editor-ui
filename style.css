@@ -1047,6 +1047,31 @@ body {
     line-height: 1.4;
 }
 
+.rotation-actions {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+}
+
+.rotation-btn {
+    height: 30px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border);
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all var(--duration) var(--ease);
+}
+
+.rotation-btn:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: rgba(99, 102, 241, 0.12);
+}
+
 /* ===================== EMPTY STATE ===================== */
 
 .empty-state {
@@ -1267,6 +1292,40 @@ body.drag-over .preview-container {
 .sel-corner.tr { top: -4px; right: -4px; }
 .sel-corner.bl { bottom: -4px; left: -4px; }
 .sel-corner.br { bottom: -4px; right: -4px; }
+
+.sel-rotate-handle {
+    position: absolute;
+    top: -36px;
+    left: 50%;
+    width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transform: translateX(-50%);
+    border: 1.5px solid rgba(255, 255, 255, 0.92);
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    box-shadow: 0 0 10px rgba(124, 58, 237, 0.5);
+    cursor: grab;
+    pointer-events: auto;
+}
+
+.sel-rotate-handle::after {
+    content: '';
+    position: absolute;
+    top: 25px;
+    left: 50%;
+    width: 1.5px;
+    height: 10px;
+    transform: translateX(-50%);
+    background: rgba(124, 58, 237, 0.8);
+}
+
+.sel-rotate-handle:active {
+    cursor: grabbing;
+}
 
 /* ===================== INSPECTOR TABS ===================== */
 

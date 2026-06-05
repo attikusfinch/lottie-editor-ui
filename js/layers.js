@@ -1,5 +1,12 @@
 import { state, dom, TYPE_NAMES, TYPE_ICONS } from './state.js';
-import { saveSnapshot, getStaticOrFirstKeyframe, setStaticOrFirstKeyframe, toast } from './utils.js';
+import {
+    saveSnapshot,
+    getStaticOrFirstKeyframe,
+    setStaticOrFirstKeyframe,
+    getStaticOrFirstKeyframeScalar,
+    setStaticOrFirstKeyframeScalar,
+    toast,
+} from './utils.js';
 import { renderPreview, renderPreviewSilent } from './preview.js';
 import { clearSelectedShapePath, getSelectedShapePathForLayer, layerMatchesShapeSelection, moveShapePath } from './shapes.js';
 
@@ -657,10 +664,56 @@ function ensureSelectionBox() {
     if (!state.selectionBox) {
         state.selectionBox = document.createElement('div');
         state.selectionBox.className = 'selection-box';
-        state.selectionBox.innerHTML = '<div class="sel-corner tl"></div><div class="sel-corner tr"></div><div class="sel-corner bl"></div><div class="sel-corner br"></div>';
+        state.selectionBox.innerHTML = `
+            <button type="button" class="sel-rotate-handle" title="Rotate selected layer">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                    <path d="M10.9 4.2A4.8 4.8 0 1 0 11.5 9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+                    <path d="M10.9 1.8v2.4H8.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </button>
+            <div class="sel-corner tl"></div><div class="sel-corner tr"></div><div class="sel-corner bl"></div><div class="sel-corner br"></div>`;
+        state.selectionBox.querySelector('.sel-rotate-handle')?.addEventListener('mousedown', startRotateDrag);
         dom.previewContainer.appendChild(state.selectionBox);
     }
     return state.selectionBox;
+}
+
+function startRotateDrag(e) {
+    if (!state.lottieData || state.selectedLayerIndices.size === 0) return;
+
+    const boxRect = state.selectionBox.getBoundingClientRect();
+    const centerX = boxRect.left + boxRect.width / 2;
+    const centerY = boxRect.top + boxRect.height / 2;
+    const rotateEntries = [];
+
+    for (const si of state.selectedLayerIndices) {
+        const entry = state.flatLayers[si];
+        if (!entry || !entry.layer || !entry.layer.ks) continue;
+        const prop = ensureLayerRotationProp(entry.layer);
+        rotateEntries.push({ entry, prop, startRotation: getStaticOrFirstKeyframeScalar(prop) || 0 });
+    }
+    if (rotateEntries.length === 0) return;
+
+    saveSnapshot();
+    state.isDragging = true;
+    state.isRotating = true;
+    state.dragEntries = [];
+    state.dragShapeEntry = null;
+    state.rotateEntries = rotateEntries;
+    state.rotateCenterX = centerX;
+    state.rotateCenterY = centerY;
+    state.rotateStartAngle = Math.atan2(e.clientY - centerY, e.clientX - centerX);
+
+    if (state.anim && state.isPlaying) state.anim.pause();
+    dom.lottiePlayer.style.cursor = 'grabbing';
+    e.preventDefault();
+    e.stopPropagation();
+}
+
+function ensureLayerRotationProp(layer) {
+    if (!layer.ks) layer.ks = {};
+    if (!layer.ks.r) layer.ks.r = { a: 0, k: 0 };
+    return layer.ks.r;
 }
 
 export function updateSelectionBox() {
@@ -764,6 +817,21 @@ export function initDrag() {
     document.addEventListener('mousemove', (e) => {
         if (!state.isDragging) return;
 
+        if (state.isRotating) {
+            const angle = Math.atan2(e.clientY - state.rotateCenterY, e.clientX - state.rotateCenterX);
+            const deltaDeg = (angle - state.rotateStartAngle) * 180 / Math.PI;
+            for (const re of state.rotateEntries) {
+                setStaticOrFirstKeyframeScalar(re.prop, re.startRotation + deltaDeg);
+            }
+            renderPreviewSilent();
+
+            if (state.rotateEntries.length === 1) {
+                const inp = document.getElementById('inp-rotation');
+                if (inp) inp.value = formatAngle(state.rotateEntries[0].startRotation + deltaDeg);
+            }
+            return;
+        }
+
         const dx = (e.clientX - state.dragStartMouseX) / state.previewScale;
         const dy = (e.clientY - state.dragStartMouseY) / state.previewScale;
 
@@ -800,12 +868,20 @@ export function initDrag() {
     document.addEventListener('mouseup', () => {
         if (!state.isDragging) return;
         state.isDragging = false;
+        state.isRotating = false;
         state.dragEntries = [];
         state.dragShapeEntry = null;
         state.dragShapeLastDx = 0;
         state.dragShapeLastDy = 0;
+        state.rotateEntries = [];
         dom.lottiePlayer.style.cursor = state.selectedLayerIndices.size > 0 ? 'grab' : '';
 
         if (state.anim && state.isPlaying) state.anim.play();
     });
+}
+
+function formatAngle(value) {
+    if (!Number.isFinite(value)) return '0';
+    const rounded = Math.round(value * 10) / 10;
+    return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
 }

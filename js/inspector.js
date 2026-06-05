@@ -158,6 +158,18 @@ export function renderInspector() {
             <div class="inspector-row"><span class="inspector-label">Y</span><input type="number" class="inspector-input" id="inp-anchor-y" value="${a[1]??0}" step="1"></div></div>`;
     }
 
+    // Rotation
+    if (ks) {
+        const rotation = ks.r ? getStaticOrFirstKeyframeScalar(ks.r) : 0;
+        html += `<div class="inspector-section"><div class="inspector-section-title">Rotation</div>
+            <div class="inspector-row"><span class="inspector-label">Deg</span><input type="number" class="inspector-input" id="inp-rotation" value="${formatAngle(rotation ?? 0)}" step="1"></div>
+            <div class="rotation-actions">
+                <button type="button" class="rotation-btn" data-rotation-delta="-15" title="Rotate left 15 degrees">${rotationIcon('left')}</button>
+                <button type="button" class="rotation-btn" data-rotation-set="0" title="Reset rotation">${rotationIcon('reset')}</button>
+                <button type="button" class="rotation-btn" data-rotation-delta="15" title="Rotate right 15 degrees">${rotationIcon('right')}</button>
+            </div></div>`;
+    }
+
     // Scale
     if (ks && ks.s) {
         const s = getStaticOrFirstKeyframe(ks.s);
@@ -223,19 +235,39 @@ export function renderInspector() {
 
     if (ks && ks.p) {
         const x = document.getElementById('inp-pos-x'), y = document.getElementById('inp-pos-y');
-        if (x && y) { const h = () => { saveSnapshot(); setStaticOrFirstKeyframe(ks.p, [parseFloat(x.value)||0, parseFloat(y.value)||0]); renderPreview(); }; x.addEventListener('change', h); y.addEventListener('change', h); }
+        if (x && y) { const h = () => { saveSnapshot(); setStaticOrFirstKeyframe(ks.p, [parseFloat(x.value)||0, parseFloat(y.value)||0]); renderTransformPreview(); }; x.addEventListener('change', h); y.addEventListener('change', h); }
     }
     if (ks && ks.a) {
         const x = document.getElementById('inp-anchor-x'), y = document.getElementById('inp-anchor-y');
-        if (x && y) { const h = () => { saveSnapshot(); setStaticOrFirstKeyframe(ks.a, [parseFloat(x.value)||0, parseFloat(y.value)||0]); renderPreview(); }; x.addEventListener('change', h); y.addEventListener('change', h); }
+        if (x && y) { const h = () => { saveSnapshot(); setStaticOrFirstKeyframe(ks.a, [parseFloat(x.value)||0, parseFloat(y.value)||0]); renderTransformPreview(); }; x.addEventListener('change', h); y.addEventListener('change', h); }
+    }
+    if (ks) {
+        const inp = document.getElementById('inp-rotation');
+        const applyRotation = (value) => {
+            saveSnapshot();
+            const prop = ensureLayerRotationProp(layer);
+            setStaticOrFirstKeyframeScalar(prop, value);
+            if (inp) inp.value = formatAngle(value);
+            renderTransformPreview();
+            updateSelectionBox();
+        };
+        if (inp) inp.addEventListener('change', () => applyRotation(parseFloat(inp.value) || 0));
+        dom.inspectorContent.querySelectorAll('.rotation-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const prop = ensureLayerRotationProp(layer);
+                const current = getStaticOrFirstKeyframeScalar(prop) || 0;
+                if (btn.dataset.rotationSet !== undefined) applyRotation(parseFloat(btn.dataset.rotationSet) || 0);
+                else applyRotation(current + (parseFloat(btn.dataset.rotationDelta) || 0));
+            });
+        });
     }
     if (ks && ks.s) {
         const x = document.getElementById('inp-scale-x'), y = document.getElementById('inp-scale-y');
-        if (x && y) { const h = () => { saveSnapshot(); setStaticOrFirstKeyframe(ks.s, [parseFloat(x.value)||100, parseFloat(y.value)||100]); renderPreview(); }; x.addEventListener('change', h); y.addEventListener('change', h); }
+        if (x && y) { const h = () => { saveSnapshot(); setStaticOrFirstKeyframe(ks.s, [parseFloat(x.value)||100, parseFloat(y.value)||100]); renderTransformPreview(); }; x.addEventListener('change', h); y.addEventListener('change', h); }
     }
     if (ks && ks.o) {
         const inp = document.getElementById('inp-opacity');
-        if (inp) inp.addEventListener('change', () => { saveSnapshot(); setStaticOrFirstKeyframeScalar(ks.o, parseFloat(inp.value)||100); renderPreview(); });
+        if (inp) inp.addEventListener('change', () => { saveSnapshot(); setStaticOrFirstKeyframeScalar(ks.o, parseFloat(inp.value)||100); renderTransformPreview(); });
     }
 
     dom.inspectorContent.querySelectorAll('.color-swatch-input').forEach(inp => {
@@ -404,4 +436,28 @@ function nudgeIcon(direction) {
         return `<svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="${paths.clear}" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
     }
     return `<svg width="13" height="13" viewBox="0 0 14 14" fill="currentColor"><path d="${paths[direction]}"/></svg>`;
+}
+
+function ensureLayerRotationProp(layer) {
+    if (!layer.ks) layer.ks = {};
+    if (!layer.ks.r) layer.ks.r = { a: 0, k: 0 };
+    return layer.ks.r;
+}
+
+function renderTransformPreview() {
+    renderPreview({ autoplay: false, preserveFrame: true });
+}
+
+function formatAngle(value) {
+    if (!Number.isFinite(value)) return '0';
+    const rounded = Math.round(value * 10) / 10;
+    return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}
+
+function rotationIcon(direction) {
+    if (direction === 'reset') {
+        return `<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7a4 4 0 1 0 1.1-2.75" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M4.1 2.2v2.2H1.9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    }
+    const flip = direction === 'left' ? ' scale(-1 1) translate(-14 0)' : '';
+    return `<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><g transform="${flip}"><path d="M10.9 4.2A4.8 4.8 0 1 0 11.5 9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M10.9 1.8v2.4H8.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></g></svg>`;
 }

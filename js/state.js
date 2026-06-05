@@ -20,6 +20,11 @@ export const state = {
     dragStartLayerY: 0,
     dragLayerEntry: null,
     dragEntries: [],
+    isRotating: false,
+    rotateCenterX: 0,
+    rotateCenterY: 0,
+    rotateStartAngle: 0,
+    rotateEntries: [],
     previewScale: 1,
 
     // Selection
